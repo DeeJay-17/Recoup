@@ -302,7 +302,13 @@ async def internal_transition(
 ) -> CaseOut:
     case = await service.get_case(session, tenant_id, case_id)
     await service.transition(
-        session, case, body.to, actor_type="agent", actor_id=actor_id, reason=body.reason
+        session,
+        case,
+        body.to,
+        actor_type="agent",
+        actor_id=actor_id,
+        reason=body.reason,
+        resolution=body.resolution,
     )
     return CaseOut.model_validate(case)
 

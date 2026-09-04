@@ -6,15 +6,18 @@ Query:   status.
 
 from __future__ import annotations
 
+import contextlib
 from datetime import timedelta
 from typing import Any
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
+from temporalio.exceptions import ActivityError
 
 with workflow.unsafe.imports_passed_through():
     from recoup_orchestrator.agents.schemas import CaseOutcome, CaseState
     from recoup_orchestrator.workflows.activities import (
+        ExecuteArgs,
         FinalizeArgs,
         MergeArgs,
         RunParams,
@@ -30,6 +33,8 @@ _ACTIVITY = {
     "merge_signals": "merge_signals",
     "record_wait": "record_wait",
     "finalize_case": "finalize_case",
+    "execute_action": "execute_action",
+    "refresh_actions": "refresh_actions",
 }
 # Generous: sibling services may still be booting when a workflow starts.
 RETRY_SHORT = RetryPolicy(
@@ -110,15 +115,36 @@ class CaseWorkflow:
                     lambda: not self.human_control or bool(self.cancel_reason)
                 )
                 continue
+            # Signals can land at any point (a reply during execution, a decision while a
+            # specialist runs): fold them in before the supervisor reasons about the state.
+            if self.pending:
+                state = await workflow.execute_activity(
+                    _ACTIVITY["merge_signals"],
+                    MergeArgs(state=state, signals=self._drain()),
+                    result_type=CaseState,
+                    start_to_close_timeout=timedelta(minutes=1),
+                    retry_policy=RETRY_SHORT,
+                )
+                if any(sig.get("type") == "customer_reply" for sig in state.signals[-3:]):
+                    state = await self._run_intent(state)
+                state = await self._execute_ready(state)
             self.phase = "supervisor"
-            result: StepResult = await workflow.execute_activity(
-                _ACTIVITY["supervisor_step"],
-                state,
-                result_type=StepResult,
-                start_to_close_timeout=timedelta(minutes=5),
-                heartbeat_timeout=timedelta(minutes=2),
-                retry_policy=RETRY_LLM,
-            )
+            try:
+                result: StepResult = await workflow.execute_activity(
+                    _ACTIVITY["supervisor_step"],
+                    state,
+                    result_type=StepResult,
+                    start_to_close_timeout=timedelta(minutes=5),
+                    heartbeat_timeout=timedelta(minutes=2),
+                    retry_policy=RETRY_LLM,
+                )
+            except ActivityError as e:
+                cause = e.cause or e
+                return await self._finalize(
+                    state,
+                    "FAILED",
+                    f"supervisor failed: {type(cause).__name__}: {str(cause)[:300]}",
+                )
             state = result.state
             self.step_no = state.step_no
             nxt = result.next
@@ -134,6 +160,7 @@ class CaseWorkflow:
                 signals = await self._wait_for_signals(
                     timedelta(hours=hours), on_timeout={"type": "timeout", "waited_hours": hours}
                 )
+                replied = any(s.get("type") == "customer_reply" for s in signals)
                 state = await workflow.execute_activity(
                     _ACTIVITY["merge_signals"],
                     MergeArgs(state=state, signals=signals),
@@ -141,6 +168,9 @@ class CaseWorkflow:
                     start_to_close_timeout=timedelta(minutes=1),
                     retry_policy=RETRY_SHORT,
                 )
+                if replied:
+                    state = await self._run_intent(state)
+                state = await self._execute_ready(state)
                 continue
             if nxt == "AWAIT_APPROVAL":
                 self.phase = "awaiting_approval"
@@ -161,28 +191,71 @@ class CaseWorkflow:
                     start_to_close_timeout=timedelta(minutes=1),
                     retry_policy=RETRY_SHORT,
                 )
+                if replied:
+                    state = await self._run_intent(state)
+                state = await self._execute_ready(state)
                 continue
             if nxt in ("RESOLVED", "ESCALATED"):
                 return await self._finalize(state, nxt, result.reason or nxt)
             self.phase = f"specialist:{nxt}"
+            try:
+                state = await workflow.execute_activity(
+                    _ACTIVITY["run_specialist"],
+                    SpecialistArgs(state=state, specialist=nxt),
+                    result_type=CaseState,
+                    start_to_close_timeout=timedelta(minutes=10),
+                    heartbeat_timeout=timedelta(minutes=3),
+                    retry_policy=RETRY_LLM,
+                )
+            except ActivityError as e:
+                cause = e.cause or e
+                return await self._finalize(
+                    state, "FAILED", f"{nxt} failed: {type(cause).__name__}: {str(cause)[:300]}"
+                )
+            self.step_no = state.step_no
+            state = await self._execute_ready(state)
+        return await self._finalize(state, "ESCALATED", "STEP_BUDGET_EXCEEDED")
+
+    async def _execute_ready(self, state: CaseState) -> CaseState:
+        """Run every approved-or-allowed proposal through the executor, then refresh statuses."""
+        state = await workflow.execute_activity(
+            _ACTIVITY["refresh_actions"],
+            state,
+            result_type=CaseState,
+            start_to_close_timeout=timedelta(minutes=1),
+            retry_policy=RETRY_SHORT,
+        )
+        for ref in list(state.approved_unexecuted()):
+            self.phase = f"executing:{ref.action_type}"
             state = await workflow.execute_activity(
-                _ACTIVITY["run_specialist"],
-                SpecialistArgs(state=state, specialist=nxt),
+                _ACTIVITY["execute_action"],
+                ExecuteArgs(state=state, action_id=ref.action_id),
                 result_type=CaseState,
-                start_to_close_timeout=timedelta(minutes=10),
-                heartbeat_timeout=timedelta(minutes=3),
-                retry_policy=RETRY_LLM,
+                start_to_close_timeout=timedelta(minutes=5),
+                heartbeat_timeout=timedelta(minutes=2),
+                retry_policy=RETRY_SHORT,
             )
             self.step_no = state.step_no
-            # signals that arrived while a specialist worked reach the next supervisor turn
-            if self.pending:
-                state = await workflow.execute_activity(
-                    _ACTIVITY["merge_signals"],
-                    MergeArgs(state=state, signals=self._drain()),
-                    start_to_close_timeout=timedelta(minutes=1),
-                    retry_policy=RETRY_SHORT,
-                )
-        return await self._finalize(state, "ESCALATED", "STEP_BUDGET_EXCEEDED")
+        return state
+
+    async def _run_intent(self, state: CaseState) -> CaseState:
+        self.phase = "specialist:Intent"
+        # On failure the supervisor still sees the raw signal; the step row records the error.
+        with contextlib.suppress(ActivityError):
+            state = await self._run_intent_activity(state)
+        return state
+
+    async def _run_intent_activity(self, state: CaseState) -> CaseState:
+        state = await workflow.execute_activity(
+            _ACTIVITY["run_specialist"],
+            SpecialistArgs(state=state, specialist="Intent"),
+            result_type=CaseState,
+            start_to_close_timeout=timedelta(minutes=10),
+            heartbeat_timeout=timedelta(minutes=3),
+            retry_policy=RETRY_LLM,
+        )
+        self.step_no = state.step_no
+        return state
 
     async def _wait_for_signals(
         self, limit: timedelta, *, on_timeout: dict[str, Any]

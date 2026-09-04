@@ -11,6 +11,7 @@ heuristic provider because all of them speak "tool calls".
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import time
 import uuid
@@ -29,11 +30,19 @@ from recoup_orchestrator.clients import ToolGatewayClient
 log = get_logger(__name__)
 
 
-class RepairExhausted(Exception):
+class AgentLoopError(Exception):
+    """Carries the partial transcript so failed steps stay debuggable."""
+
+    def __init__(self, message: str, partial: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.partial = partial or {}
+
+
+class RepairExhausted(AgentLoopError):
     pass
 
 
-class IterationBudgetExceeded(Exception):
+class IterationBudgetExceeded(AgentLoopError):
     pass
 
 
@@ -182,6 +191,11 @@ class ToolLoopAgent:
 
         async def run(call: ToolCall) -> tuple[ToolCall, dict[str, Any], int]:
             t0 = time.perf_counter()
+            # Stable per (run, agent, iteration, args): a retried activity replays the same call.
+            digest = hashlib.sha1(
+                json.dumps(call.args, sort_keys=True, default=str).encode()
+            ).hexdigest()[:12]
+            idem = f"{self.run_id}:{self.spec.name}:{state['iterations']}:{call.name}:{digest}"
             try:
                 env = await self.gateway.invoke(
                     call.name,
@@ -190,6 +204,7 @@ class ToolLoopAgent:
                     run_id=self.run_id,
                     actor=self.actor,
                     args=call.args,
+                    idempotency_key=idem,
                 )
             except Exception as e:
                 env = {"status": "ERROR", "message": str(e)[:500]}
@@ -283,13 +298,24 @@ class ToolLoopAgent:
             "provider": "",
             "model": "",
         }
-        final: LoopState = await self._graph.ainvoke(
-            init,
-            config={
-                "configurable": {"thread_id": thread_id},
-                "recursion_limit": self.max_iterations * 2 + 4,
-            },
-        )
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "recursion_limit": self.max_iterations * 2 + 4,
+        }
+        try:
+            final: LoopState = await self._graph.ainvoke(init, config=config)
+        except AgentLoopError as e:
+            try:
+                snap = self._graph.get_state(config)
+                e.partial = {
+                    "messages": snap.values.get("messages", []),
+                    "tool_log": snap.values.get("tool_log", []),
+                    "usage": snap.values.get("usage", {}),
+                    "iterations": snap.values.get("iterations", 0),
+                }
+            except Exception:
+                pass
+            raise
         assert final["output"] is not None
         return AgentResult(
             output=self.spec.output_model.model_validate(final["output"]),

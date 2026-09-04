@@ -21,8 +21,9 @@ React 18 + TypeScript + TanStack + Tailwind.
 | 1 Domain core | Mock ERP + scenario generator, Case service (state machine, outbox, timeline, approvals), ingestion, console | ✅ |
 | 2 Tools & Policy | Policy Service (rule engine + simulator), Communication Service (Mailpit in/out, threading, templates), Tool Gateway (typed manifest, policy/approval gate, reconciliation, audit) | ✅ |
 | 3 First agents | Provider-agnostic LLM layer (Gemini default), Temporal `CaseWorkflow`, LangGraph Supervisor + Triage + Investigator, prompt versions, model routing, Realtime WebSocket stream, Agents console | ✅ |
-| 4 Resolution agents + HITL | Reconciler, Negotiator, Communicator, approval gates in the workflow, diff editor | ⏳ next |
-| 5–8 | RAG/memory, evals, analytics, launch | planned |
+| 4 Resolution agents + HITL | Reconciler, Negotiator, Communicator, intent extractor; deterministic executor; approval and customer-wait paths with follow-up cadence; approval inbox with field editors, diff view, feedback codes, keyboard shortcuts; scripted customer persona | ✅ |
+| 5 Memory & RAG | Knowledge Service (hybrid retrieval + rerank), customer memory, Customer 360 page | ⏳ next |
+| 6–8 | evals, analytics, launch | planned |
 
 ## Choosing an LLM provider
 
@@ -56,7 +57,8 @@ open http://localhost:3000    # ava@acme-demo.com / password
 Useful UIs: Redpanda console `:8090` · Temporal `:8233` · Mailpit `:8025` · Grafana/Tempo `:3001` · MinIO `:9001`.
 
 ```bash
-make simulate-reply           # play the customer: reply to the newest outbound email, poller links it to the case
+make demo                     # scripted customer persona: answers every agent email per scenario, so cases run to RESOLVED
+make simulate-reply           # one-off customer reply to the newest outbound email
 ```
 
 ## Quick start (host, against your own Postgres)
@@ -108,16 +110,24 @@ agent ──POST /tools/create_credit_memo/invoke──> Tool Gateway
 
 Nothing the model says can skip this path: the LLM never talks to the ERP or SMTP directly.
 
-## How a case gets worked (phase 3)
+## How a case gets worked (phases 3–4)
 
 ```
 case.created (Kafka) ──> orchestrator starts CaseWorkflow(case-<id>) on Temporal
-  loop:  Supervisor (LLM, structured decision) ──> Triage | Investigator | ESCALATED | RESOLVED
+  loop:  Supervisor (LLM, structured decision)
+           ──> Triage | Investigator | Reconciler | Negotiator | Communicator
+           ──> AWAIT_APPROVAL | WAIT_FOR_CUSTOMER | ESCALATED | RESOLVED
          specialist = LangGraph tool loop: model ⇄ Tool Gateway until it calls submit_<agent>
+         specialists never execute side effects: they call propose_action and the Policy Service
+         answers ALLOW / REQUIRE_APPROVAL / DENY
+         executor (plain code) runs allowed/approved proposals through the Tool Gateway with the
+         approval_ref; a human's edits override the model's payload
+         customer replies are read by a constrained Intent extractor (claims, never instructions)
          every step: agent_steps row, agent.step.* event, case timeline entry, tokens + cost
   signals: customer_replied / action_decided / human_takeover / human_release (from Kafka)
-  waits:   WAIT_FOR_CUSTOMER (timer) · AWAIT_APPROVAL · HUMAN_CONTROL (paused)
-  end:     escalation brief via escalate_case tool, or RESOLVED transition
+  waits:   WAIT_FOR_CUSTOMER (72h → 168h → 336h follow-ups) · AWAIT_APPROVAL · HUMAN_CONTROL
+  end:     RESOLVED only when secured (zero balance, confirmed payment, accepted offer, PO
+           received + invoice re-sent); otherwise an escalation brief for a human
 ```
 
 The console's **Agents** page shows every run's trace (steps, tool calls, tokens, models,

@@ -58,3 +58,16 @@
     bundle. **Agents → Models**: switch the strong tier to another provider/model per tenant.
 18. Take over a case from its page: the run shows `WAITING / HUMAN_CONTROL`; return it and the
     supervisor resumes.
+
+## Phase 4: resolution and the closed loop
+
+19. `make demo` in a second terminal (the customer persona). New cases now run end to end:
+    dispute → Reconciler proposes a credit memo → **Approvals** (approve, or *Edit* the amount
+    and watch the diff) → executor issues the memo in the ERP → Communicator sends the
+    dispute_resolution email → persona confirms payment → Intent extractor reads it → RESOLVED.
+20. MISSING_PO cases: po_request email → persona replies with the PO → resend_invoice → RESOLVED.
+    CASH_FLOW cases: Negotiator proposes a plan (auto-allowed within policy) → offer email →
+    persona accepts → RESOLVED.
+21. Reject a proposal with a feedback code: the run escalates with the rejection in the brief.
+22. Stop `make demo`: after the wait timer (72h by default; set `CUSTOMER_WAIT_HOURS_DEFAULT`
+    lower for demos) the Communicator sends reminders, then escalates after three.

@@ -45,6 +45,8 @@ class WorkerRunner:
                 activities.merge_signals,
                 activities.record_wait,
                 activities.finalize_case,
+                activities.execute_action,
+                activities.refresh_actions,
             ],
             max_concurrent_activities=8,
         )

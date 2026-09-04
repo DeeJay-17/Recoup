@@ -14,9 +14,9 @@ class Settings(BaseServiceSettings):
     worker_enabled: bool = True
     consumer_enabled: bool = True
     autostart_on_case_created: bool = True
-    max_steps_per_run: int = 12
+    max_steps_per_run: int = 20
     max_tokens_per_run: int = 150_000
-    max_agent_iterations: int = 12
+    max_agent_iterations: int = 16
     max_repairs: int = 2
     customer_wait_hours_default: int = 72
     approval_wait_days: int = 30

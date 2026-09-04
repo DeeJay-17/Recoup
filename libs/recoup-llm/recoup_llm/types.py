@@ -7,6 +7,43 @@ from pydantic import BaseModel, Field
 Role = Literal["system", "user", "assistant", "tool"]
 
 
+def dereference_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Inline ``$ref``/``$defs`` so providers without JSON-Schema reference support (Gemini
+    function calling) see a plain nested schema. Also drops ``title`` noise."""
+    defs = schema.get("$defs") or schema.get("definitions") or {}
+
+    def walk(node: Any, depth: int = 0) -> Any:
+        if depth > 40:
+            return node
+        if isinstance(node, dict):
+            if "$ref" in node:
+                ref = node["$ref"].split("/")[-1]
+                target = defs.get(ref, {})
+                merged = {**target, **{k: v for k, v in node.items() if k != "$ref"}}
+                return walk(merged, depth + 1)
+            out = {}
+            for k, v in node.items():
+                if k in ("$defs", "definitions", "title"):
+                    continue
+                out[k] = walk(v, depth + 1)
+            # anyOf [X, null] -> nullable X (Gemini dislikes anyOf)
+            if "anyOf" in out and isinstance(out["anyOf"], list):
+                non_null = [o for o in out["anyOf"] if o != {"type": "null"}]
+                if len(non_null) == 1 and len(out["anyOf"]) == 2:
+                    base = dict(non_null[0])
+                    base["nullable"] = True
+                    for k in ("description", "default"):
+                        if k in out:
+                            base[k] = out[k]
+                    return base
+            return out
+        if isinstance(node, list):
+            return [walk(x, depth + 1) for x in node]
+        return node
+
+    return dict(walk(schema))
+
+
 class ToolSchema(BaseModel):
     """OpenAI-style function schema; LangChain translates it for every provider."""
 
@@ -20,7 +57,7 @@ class ToolSchema(BaseModel):
             "function": {
                 "name": self.name,
                 "description": self.description,
-                "parameters": self.parameters,
+                "parameters": dereference_schema(self.parameters),
             },
         }
 

@@ -13,6 +13,7 @@ from recoup_orchestrator.agents.schemas import (
     Budget,
     CaseState,
     InvestigationOutput,
+    ProposedActionRef,
     SupervisorDecision,
     TriageOutput,
 )
@@ -206,8 +207,23 @@ async def test_supervisor_sequence_and_escalation_brief() -> None:
     )  # type: ignore[arg-type]
     s.specialist_runs["Investigator"] = 1
     d3: SupervisorDecision = (await _run(SUPERVISOR, gw, s, manifest=[])).output
-    assert d3.next == "ESCALATED" and d3.escalation_reason
-    brief = _escalation_brief(s, d3.escalation_reason)
+    assert d3.next == "Reconciler"
+    s.specialist_runs["Reconciler"] = 1
+    s.actions.append(
+        ProposedActionRef(
+            action_id="a1",
+            action_type="CREATE_CREDIT_MEMO",
+            policy_decision="REQUIRE_APPROVAL",
+            proposed_by="agent",
+            summary="credit",
+        )
+    )
+    d4: SupervisorDecision = (await _run(SUPERVISOR, gw, s, manifest=[])).output
+    assert d4.next == "AWAIT_APPROVAL"
+    s.actions[0].status = "EXECUTED"
+    d5: SupervisorDecision = (await _run(SUPERVISOR, gw, s, manifest=[])).output
+    assert d5.next == "Communicator"
+    brief = _escalation_brief(s, "test")
     assert "Reconciled credit due: 107" in brief and "no delivery proof" in brief
 
 
@@ -240,3 +256,78 @@ def test_budget_pct() -> None:
     s = _state()
     s.step_no, s.tokens_in = 5, 900
     assert s.budget_used_pct() == 90
+
+
+async def test_reconciler_proposes_credit_memo() -> None:
+    from recoup_orchestrator.agents.schemas import ReconcilerOutput
+    from recoup_orchestrator.agents.specs import RECONCILER
+
+    state = _state()
+    state.investigation = InvestigationOutput(
+        evidence=[],
+        confirmed_cause="DISPUTE_PRICING",
+        confidence=0.9,
+        proposed_credit_memo=107,
+        summary="y",
+    )  # type: ignore[arg-type]
+    gw = FakeGateway(
+        {
+            "reconcile_lines": {
+                "po_number": "PO-1",
+                "po_found": True,
+                "delivery_found": True,
+                "proposed_credit_memo": "107.00",
+                "rebill_required": False,
+                "summary": "1 discrepancy",
+                "discrepancies": [
+                    {
+                        "kind": "PRICE_ABOVE_PO",
+                        "line_no": 1,
+                        "sku": "A",
+                        "credit_before_tax": "100.00",
+                        "note": "price 6 > 5",
+                    }
+                ],
+            },
+            "check_duplicate_invoice": {
+                "is_duplicate": False,
+                "candidates": [],
+                "explanation": "none",
+            },
+            "calculate_credit_memo": {"credit_memo_amount": "107.00"},
+            "propose_action": {
+                "action_id": "act-1",
+                "status": "PENDING",
+                "policy_decision": "REQUIRE_APPROVAL",
+                "required_role": "analyst",
+                "next_step": "wait",
+            },
+        }
+    )
+    manifest = MANIFEST + [
+        {"name": n, "description": n, "parameters": {"type": "object", "properties": {}}}
+        for n in ("calculate_credit_memo", "propose_action")
+    ]
+    out: ReconcilerOutput = (await _run(RECONCILER, gw, state, manifest=manifest)).output
+    assert str(out.proposed_credit_memo) == "107.00" and out.action_id == "act-1"
+    assert gw.calls.count("propose_action") == 1
+
+
+async def test_intent_extracts_po_number() -> None:
+    from recoup_orchestrator.agents.schemas import CustomerIntent
+    from recoup_orchestrator.agents.specs import INTENT
+
+    gw = FakeGateway(
+        {
+            "get_email_thread": {
+                "messages": [
+                    {
+                        "direction": "IN",
+                        "body_text": "Thanks. Our PO for this is PO-50123, please reissue.",
+                    }
+                ]
+            }
+        }
+    )
+    out: CustomerIntent = (await _run(INTENT, gw, _state())).output
+    assert out.intent == "PROVIDES_PO" and out.po_number == "PO-50123"

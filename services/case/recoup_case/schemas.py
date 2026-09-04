@@ -124,6 +124,7 @@ class TransitionBody(BaseModel):
     to: CaseStatus
     reason: str | None = None
     expected_version: int | None = None
+    resolution: dict[str, Any] | None = None
 
 
 class NoteBody(BaseModel):

@@ -275,8 +275,11 @@ async def transition(
     actor_id: str,
     reason: str | None = None,
     expected_version: int | None = None,
+    resolution: dict[str, Any] | None = None,
 ) -> Case:
     _touch(case, expected_version)
+    if resolution is not None:
+        case.resolution = resolution
     _set_status(session, case, to, actor_type=actor_type, actor_id=actor_id, reason=reason)
     return case
 

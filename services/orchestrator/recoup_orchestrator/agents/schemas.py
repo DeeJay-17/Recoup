@@ -29,7 +29,12 @@ NextStep = Literal[
     "RESOLVED",
     "ESCALATED",
 ]
-SPECIALISTS_AVAILABLE: frozenset[str] = frozenset({"Triage", "Investigator"})
+SPECIALISTS_AVAILABLE: frozenset[str] = frozenset(
+    {"Triage", "Investigator", "Reconciler", "Negotiator", "Communicator"}
+)
+DISPUTE_CAUSES: frozenset[str] = frozenset(
+    {"DISPUTE_PRICING", "DISPUTE_QUANTITY", "DUPLICATE_INVOICE", "SHORT_PAY"}
+)
 
 
 class PlanItem(BaseModel):
@@ -89,6 +94,103 @@ class InvestigationOutput(BaseModel):
     summary: str = Field(max_length=800)
 
 
+class ProposedActionRef(BaseModel):
+    """What a specialist proposed through propose_action, tracked until executed."""
+
+    action_id: str
+    action_type: str
+    policy_decision: str
+    required_role: str | None = None
+    status: str = "PENDING"  # PENDING | APPROVED | EDITED | REJECTED | EXECUTED | DENIED | FAILED
+    proposed_by: str
+    summary: str = ""
+    execution_result: dict[str, Any] | None = None
+
+
+class LineDiscrepancyOut(BaseModel):
+    kind: str
+    line_no: int | None = None
+    sku: str | None = None
+    credit_before_tax: Decimal
+    note: str = Field(max_length=300)
+
+
+class ReconcilerOutput(BaseModel):
+    line_discrepancies: list[LineDiscrepancyOut] = Field(max_length=20)
+    proposed_credit_memo: Decimal = Field(ge=0)
+    rebill_required: bool = False
+    void_duplicate: bool = False
+    rationale: str = Field(max_length=800)
+    action_id: str | None = Field(
+        default=None, description="From propose_action when a credit memo was proposed"
+    )
+    nothing_owed: bool = False
+
+
+class Offer(BaseModel):
+    type: Literal["PAYMENT_PLAN", "EXTENSION", "EARLY_PAY_DISCOUNT", "NONE"]
+    installments: int | None = Field(default=None, ge=1, le=12)
+    first_due: str | None = Field(default=None, description="ISO date")
+    discount_pct: Decimal | None = Field(default=None, ge=0, le=100)
+    extension_days: int | None = Field(default=None, ge=0, le=180)
+    plan_total: Decimal | None = None
+    summary: str = Field(max_length=300)
+
+
+class NegotiatorOutput(BaseModel):
+    offer: Offer
+    fallback_offers: list[Offer] = Field(default_factory=list, max_length=3)
+    walk_away_condition: str = Field(max_length=300)
+    rationale: str = Field(max_length=800)
+    action_id: str | None = Field(
+        default=None, description="From propose_action when a plan was proposed"
+    )
+
+
+class CommunicatorOutput(BaseModel):
+    to: list[str] = Field(min_length=1, max_length=5)
+    subject: str = Field(max_length=200)
+    body_text: str = Field(max_length=6000)
+    template: str | None = None
+    tone_score: float = Field(ge=0, le=1)
+    purpose: Literal[
+        "po_request",
+        "resend_invoice",
+        "payment_reminder",
+        "dispute_resolution",
+        "payment_plan_offer",
+        "short_pay_followup",
+        "other",
+    ]
+    action_id: str | None = Field(default=None, description="From propose_action(SEND_EMAIL)")
+    policy_decision: str | None = None
+
+
+class CustomerIntent(BaseModel):
+    """Constrained extraction from an untrusted customer email: claims, never instructions."""
+
+    intent: Literal[
+        "CONFIRMS_PAYMENT",
+        "PROVIDES_PO",
+        "ACCEPTS_OFFER",
+        "REJECTS_OFFER",
+        "DISPUTES",
+        "REQUESTS_INFO",
+        "REDIRECTS_CONTACT",
+        "OUT_OF_OFFICE",
+        "UNCLEAR",
+    ]
+    po_number: str | None = None
+    promised_pay_date: str | None = Field(
+        default=None, description="ISO date if a payment date was promised"
+    )
+    promised_amount: Decimal | None = None
+    new_contact_email: str | None = None
+    disputed_points: list[str] = Field(default_factory=list, max_length=5)
+    summary: str = Field(max_length=400)
+    confidence: float = Field(ge=0, le=1)
+
+
 class Budget(BaseModel):
     max_steps: int
     max_tokens: int
@@ -119,8 +221,28 @@ class CaseState(BaseModel):
     signals: list[dict[str, Any]] = Field(default_factory=list)
     triage: TriageOutput | None = None
     investigation: InvestigationOutput | None = None
+    reconciliation: ReconcilerOutput | None = None
+    negotiation: NegotiatorOutput | None = None
+    last_email: CommunicatorOutput | None = None
+    last_intent: CustomerIntent | None = None
+    actions: list[ProposedActionRef] = Field(default_factory=list)
+    outreach_count: int = 0
+    waits: int = 0
     last_decision: SupervisorDecision | None = None
     prompt_bundle: dict[str, int] = Field(default_factory=dict)
+
+    def pending_actions(self) -> list[ProposedActionRef]:
+        return [a for a in self.actions if a.status == "PENDING"]
+
+    def approved_unexecuted(self) -> list[ProposedActionRef]:
+        return [a for a in self.actions if a.status in ("APPROVED", "EDITED")]
+
+    def executed(self, action_type: str | None = None) -> list[ProposedActionRef]:
+        return [
+            a
+            for a in self.actions
+            if a.status == "EXECUTED" and (action_type is None or a.action_type == action_type)
+        ]
 
     @property
     def tokens_total(self) -> int:
@@ -163,6 +285,27 @@ class CaseState(BaseModel):
             "investigation": self.investigation.model_dump(mode="json")
             if self.investigation
             else None,
+            "reconciliation": self.reconciliation.model_dump(mode="json")
+            if self.reconciliation
+            else None,
+            "negotiation": self.negotiation.model_dump(mode="json") if self.negotiation else None,
+            "last_email": (
+                {
+                    k: v
+                    for k, v in self.last_email.model_dump(mode="json").items()
+                    if k != "body_text"
+                }
+                if self.last_email
+                else None
+            ),
+            "last_customer_intent": self.last_intent.model_dump(mode="json")
+            if self.last_intent
+            else None,
+            "actions": [
+                a.model_dump(mode="json", exclude={"execution_result"}) for a in self.actions
+            ],
+            "outreach_count": self.outreach_count,
+            "waits": self.waits,
             "signals": self.signals[-5:],
             "available_specialists": sorted(SPECIALISTS_AVAILABLE),
         }

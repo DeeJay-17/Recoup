@@ -19,22 +19,35 @@ def file_prompts() -> dict[str, str]:
 
 
 async def seed_from_files(session: AsyncSession) -> int:
+    """Seed new prompts; re-seed changed repo prompts as a new version.
+
+    A repo change becomes the active version only when the current active version was itself
+    seeded from the repo, so prompts edited by humans in the console are never overridden.
+    """
     n = 0
-    existing = set((await session.scalars(select(PromptVersion.name).distinct())).all())
+    rows = list((await session.scalars(select(PromptVersion))).all())
+    by_name: dict[str, list[PromptVersion]] = {}
+    for r in rows:
+        by_name.setdefault(r.name, []).append(r)
     for name, content in file_prompts().items():
-        if name in existing:
+        versions = sorted(by_name.get(name, []), key=lambda v: v.version)
+        if any(v.content == content for v in versions):
             continue
-        session.add(
-            PromptVersion(
-                name=name,
-                version=1,
-                content=content,
-                notes="seeded from repo",
-                created_by="system:seed",
-                created_at=utcnow(),
-                is_active=True,
-            )
+        active = next((v for v in versions if v.is_active), None)
+        activate = active is None or active.created_by == "system:seed"
+        v = PromptVersion(
+            name=name,
+            version=(versions[-1].version + 1) if versions else 1,
+            content=content,
+            notes="seeded from repo" if not versions else "re-seeded: repo prompt changed",
+            created_by="system:seed",
+            created_at=utcnow(),
+            is_active=activate,
         )
+        if activate:
+            for old in versions:
+                old.is_active = False
+        session.add(v)
         n += 1
     return n
 

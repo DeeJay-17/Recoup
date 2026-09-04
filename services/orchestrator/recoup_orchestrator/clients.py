@@ -98,6 +98,15 @@ class CaseClient:
         _raise(r, "case")
         return dict(r.json())
 
+    async def get_action(
+        self, tenant_id: uuid.UUID, case_id: uuid.UUID, action_id: str
+    ) -> dict[str, Any]:
+        r = await self.c.get(
+            f"/internal/cases/{case_id}/actions/{action_id}", params={"tenant_id": str(tenant_id)}
+        )
+        _raise(r, "action")
+        return dict(r.json())
+
     async def triage(
         self, tenant_id: uuid.UUID, case_id: uuid.UUID, body: dict[str, Any]
     ) -> dict[str, Any]:
@@ -108,12 +117,18 @@ class CaseClient:
         return dict(r.json())
 
     async def transition(
-        self, tenant_id: uuid.UUID, case_id: uuid.UUID, to: str, reason: str, actor: str
+        self,
+        tenant_id: uuid.UUID,
+        case_id: uuid.UUID,
+        to: str,
+        reason: str,
+        actor: str,
+        resolution: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         r = await self.c.post(
             f"/internal/cases/{case_id}/transition",
             params={"tenant_id": str(tenant_id), "actor_id": actor},
-            json={"to": to, "reason": reason},
+            json={"to": to, "reason": reason, "resolution": resolution},
         )
         _raise(r, "case")
         return dict(r.json())

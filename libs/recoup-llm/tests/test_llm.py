@@ -55,3 +55,22 @@ def test_tenant_override_changes_model() -> None:
     s = LLMSettings(provider="heuristic", _env_file=None)  # type: ignore[call-arg]
     r = build_router(s, overrides={"strong": {"provider": "heuristic", "model": "x"}})
     assert r.for_tier("strong").provider == "heuristic"
+
+
+def test_dereference_schema_inlines_refs_and_nullables() -> None:
+    from pydantic import BaseModel as BM
+    from recoup_llm.types import dereference_schema
+
+    class Inner(BM):
+        x: int
+
+    class Outer(BM):
+        inner: Inner
+        items: list[Inner]
+        maybe: str | None = None
+
+    d = dereference_schema(Outer.model_json_schema())
+    assert "$defs" not in d and "$ref" not in str(d)
+    assert d["properties"]["inner"]["properties"]["x"]["type"] == "integer"
+    assert d["properties"]["items"]["items"]["properties"]["x"]["type"] == "integer"
+    assert d["properties"]["maybe"] == {"type": "string", "nullable": True, "default": None}

@@ -104,6 +104,24 @@ a repair message (max 2) and then the step fails.
 * `agent_runs` / `agent_steps` store inputs, outputs, tool logs, full message transcripts,
   tokens and cost per step; `prompt_versions` are seeded from `prompts/*.md` and editable.
 
+## Resolution loop (phase 4)
+
+* Specialists Reconciler / Negotiator / Communicator only *propose* (`propose_action`); the
+  activity records the returned `action_id` in `CaseState.actions`. `refresh_actions` pulls the
+  authoritative status from the case service; `execute_action` (no LLM) runs APPROVED / EDITED /
+  ALLOWed proposals through the Tool Gateway with `approval_ref` and merges `human_final` over
+  the model payload.
+* Supervisor guardrails in code: pending proposals force `AWAIT_APPROVAL`; `WAIT_FOR_CUSTOMER`
+  is only possible after an email was actually sent; `RESOLVED` requires a secured outcome
+  (`_resolution_secured`); a specialist can run at most three times per run.
+* Customer replies trigger the `Intent` specialist (fast tier, read-only) whose structured
+  output is the only way customer text influences the Supervisor.
+* Follow-up cadence: each wait timeout increments `waits`; the Communicator sends the next
+  reminder; after three unanswered follow-ups the case escalates.
+* `scripts/simulate_customer.py` is a scripted persona keyed on Mock ERP ground truth (provides
+  the PO, confirms payment after a credit memo, accepts the plan, ...) so the closed loop runs
+  unattended; the LLM persona arrives in phase 7 behind the same loop.
+
 ## Realtime
 
 Each replica consumes all topics with a unique consumer group and fans events out over

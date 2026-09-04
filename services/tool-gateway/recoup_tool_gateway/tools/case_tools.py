@@ -243,6 +243,22 @@ async def _propose_facts(ctx: ToolContext, args: ProposeArgs) -> dict[str, Any]:
 )
 async def propose_action(ctx: ToolContext, args: ProposeArgs) -> ProposeResult:
     case_id = _require_case(ctx)
+    # One open proposal per action type per case: a second call returns the existing one.
+    detail = await ctx.cases.get_detail(ctx.tenant_id, case_id)
+    for a in detail["actions"]:
+        if (
+            a["action_type"] == args.action_type
+            and a["status"] in ("PENDING", "APPROVED", "EDITED")
+            and not a.get("executed_at")
+        ):
+            return ProposeResult(
+                action_id=a["id"],
+                status=a["status"],
+                policy_decision=a["policy_decision"],
+                required_role=a.get("required_role"),
+                policy_reason="existing proposal reused",
+                next_step=_next_step(a["policy_decision"], a["id"]),
+            )
     decision = ctx._cache.get("policy_decision") or {}
     body = {
         "action_type": args.action_type,
@@ -256,20 +272,23 @@ async def propose_action(ctx: ToolContext, args: ProposeArgs) -> ProposeResult:
         "run_id": str(ctx.run_id) if ctx.run_id else None,
     }
     a = await ctx.cases.propose_action(ctx.tenant_id, case_id, body)
-    d = a["policy_decision"]
-    nxt = {
-        "ALLOW": "Execute now with approval_ref=<action_id>.",
-        "REQUIRE_APPROVAL": f"Wait for a {a.get('required_role') or 'human'} decision; then execute with approval_ref=<action_id>.",
-        "DENY": "Do not execute. Re-plan with the denial reason.",
-    }[d]
     return ProposeResult(
         action_id=a["id"],
         status=a["status"],
-        policy_decision=d,
+        policy_decision=a["policy_decision"],
         required_role=a.get("required_role"),
         policy_reason=decision.get("reason"),
-        next_step=nxt,
+        next_step=_next_step(a["policy_decision"], a["id"]),
     )
+
+
+def _next_step(decision: str, action_id: str) -> str:
+    base = f"Proposal recorded (action_id={action_id}). Do not call propose_action again for this action. "
+    return base + {
+        "ALLOW": "Policy allows it; the workflow executes it automatically. Finish now: call your submit tool with this action_id.",
+        "REQUIRE_APPROVAL": "A human will decide in the console; the workflow waits and executes it if approved. Finish now: call your submit tool with this action_id.",
+        "DENY": "Policy denied it and it will not run. Finish now: call your submit tool, explaining the denial in the rationale.",
+    }.get(decision, "Finish now: call your submit tool with this action_id.")
 
 
 class EscalateArgs(BaseModel):

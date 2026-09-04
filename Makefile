@@ -43,6 +43,9 @@ seed: ## Seed IAM (demo tenant + users) and Mock ERP (customers/invoices/scenari
 simulate-reply: ## Send a simulated customer reply into Mailpit for the newest outbound email
 	uv run python scripts/simulate_reply.py
 
+demo: ## Run the scripted customer persona so cases progress autonomously (Ctrl-C to stop)
+	uv run python scripts/simulate_customer.py
+
 ingest: ## Trigger one overdue-invoice ingestion pass on the case service
 	curl -s -X POST $${CASE_URL:-http://localhost:8003}/internal/ingest | python3 -m json.tool
 
@@ -86,4 +89,4 @@ test: ## Unit tests (no DB required)
 test-all: ## All tests incl. integration (requires TEST_DATABASE_URL)
 	@for p in $(PY_PKGS); do echo ">> pytest $$p"; (cd $$p && uv run --project ../.. pytest -q --rootdir=. -p no:cacheprovider) || exit 1; done
 
-.PHONY: help install env infra-up up down logs migrate migrate-down seed simulate-reply run-agents ingest dev-iam dev-orchestrator dev-realtime dev-erp dev-case dev-policy dev-comm dev-tools dev-gateway dev-web lint fmt test test-all
+.PHONY: help install env infra-up up down logs migrate migrate-down seed simulate-reply demo run-agents ingest dev-iam dev-orchestrator dev-realtime dev-erp dev-case dev-policy dev-comm dev-tools dev-gateway dev-web lint fmt test test-all
