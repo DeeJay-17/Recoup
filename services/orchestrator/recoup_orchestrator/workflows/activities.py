@@ -857,7 +857,8 @@ def _resolution_payload(state: CaseState) -> dict[str, Any]:
         "emails_sent": len(state.executed("SEND_EMAIL")),
         "actions": [a.model_dump(mode="json", exclude={"execution_result"}) for a in state.actions],
     }
-    return json.loads(json.dumps(payload, default=str))  # Decimals -> strings for the wire
+    safe: dict[str, Any] = json.loads(json.dumps(payload, default=str))  # Decimals -> strings
+    return safe
 
 
 def _escalation_brief(state: CaseState, reason: str) -> str:
