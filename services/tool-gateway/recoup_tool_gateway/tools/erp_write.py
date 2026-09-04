@@ -97,7 +97,24 @@ async def _plan_facts(ctx: ToolContext, args: PlanApplyArgs) -> dict[str, Any]:
     invoices = [await ctx.erp.get_invoice(r) for r in args.invoice_refs]
     earliest = min(i.due_date for i in invoices)
     last_due = date.fromordinal(args.first_due.toordinal() + 30 * (args.installments - 1))
-    return {
+    # Policy must judge the customer the plan actually pays for, which is not necessarily the
+    # case's customer: a plan aimed at another account would otherwise be judged on the wrong one.
+    facts: dict[str, Any] = {}
+    target_refs = {i.customer_ref for i in invoices}
+    if target_refs:
+        base = await ctx.customer() or {}
+        holds, risks = [], []
+        for ref in sorted(target_refs):
+            c = await ctx.erp.get_customer(ref)
+            holds.append(c.credit_hold)
+            risks.append(float(c.credit_risk_score))
+        facts["customer"] = {
+            **base,
+            "ref": ", ".join(sorted(target_refs)),
+            "credit_hold": any(holds),
+            "credit_risk_score": max(risks) if risks else base.get("credit_risk_score"),
+        }
+    return facts | {
         "action": {
             "invoice_refs": args.invoice_refs,
             "installments": args.installments,

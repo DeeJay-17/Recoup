@@ -10,6 +10,7 @@ import uuid
 from decimal import Decimal
 from typing import Any
 
+import httpx
 from recoup_common.db import Database, utcnow
 from recoup_common.errors import ConflictError, NotFoundError, ValidationError
 from recoup_common.logging import get_logger
@@ -19,13 +20,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from recoup_evals import judge as judging
 from recoup_evals import redteam
-from recoup_evals.clients import CaseClient, ErpClient, OrchestratorClient, ToolGatewayClient
+from recoup_evals.clients import (
+    CaseClient,
+    ErpClient,
+    OrchestratorClient,
+    ToolGatewayClient,
+    UpstreamError,
+)
 from recoup_evals.models import EvalCase, EvalDataset, EvalResult, EvalRun
 from recoup_evals.scoring import aggregate, score_case, to_decimal
 from recoup_evals.settings import Settings
 
 log = get_logger(__name__)
 TERMINAL = {"COMPLETED", "ESCALATED", "FAILED", "CANCELLED"}
+TRANSIENT_RETRIES = 4
+
+
+async def _retry(fn: Any, *args: Any, **kw: Any) -> Any:
+    """Retry a call across transient network faults: a suite outlives a service restart."""
+    last: Exception | None = None
+    for attempt in range(TRANSIENT_RETRIES):
+        try:
+            return await fn(*args, **kw)
+        except (httpx.HTTPError, OSError, UpstreamError) as e:
+            last = e
+            await asyncio.sleep(2 * (attempt + 1))
+    raise last if last else RuntimeError("retry failed")
 
 
 class Harness:
@@ -59,6 +79,11 @@ class Harness:
         across scenarios so no single root cause dominates the score."""
         invoices = await self.erp.overdue_invoices(days=overdue_days, limit=max(size * 6, 300))
         buckets: dict[str, list[dict[str, Any]]] = {}
+        skipped: dict[str, int] = {}
+
+        def skip(reason: str) -> None:
+            skipped[reason] = skipped.get(reason, 0) + 1
+
         for inv in invoices:
             gt = await self.erp.ground_truth(inv["invoice_ref"])
             if not gt or gt.get("root_cause") in (None, "NONE"):
@@ -67,6 +92,19 @@ class Harness:
                 continue
             case = await self.cases.by_invoice(tenant_id, inv["invoice_ref"])
             if not case:
+                continue
+            # Ground truth describes the invoice as it was seeded. Two things make a case
+            # unscoreable, and both come from a stack that has been used: the ERP was re-seeded
+            # under the same invoice numbers (so the case points at someone else's invoice), or a
+            # live run already issued a credit memo (so the expected credit has been collected).
+            if case.get("customer_ref") != inv["customer_ref"]:
+                skip("case_invoice_customer_mismatch")
+                continue
+            total = to_decimal(inv.get("total")) or Decimal("0")
+            paid = to_decimal(inv.get("amount_paid")) or Decimal("0")
+            open_amount = to_decimal(inv.get("amount_open")) or Decimal("0")
+            if open_amount != total - paid:
+                skip("credit_memo_already_applied")
                 continue
             buckets.setdefault(gt["root_cause"], []).append(
                 {"invoice": inv, "gt": gt, "case": case}
@@ -79,6 +117,8 @@ class Harness:
             if buckets[c]:
                 picked.append(buckets[c].pop(0))
             i += 1
+        if skipped:
+            log.info("eval.dataset_filtered", **skipped)
         if not picked:
             raise ValidationError("no eligible cases: seed the Mock ERP and run ingestion first")
         async with self.db.session() as session:
@@ -96,7 +136,12 @@ class Harness:
                 description=description,
                 case_count=len(picked),
                 created_at=utcnow(),
-                spec={"size": size, "overdue_days": overdue_days, "scenarios": scenarios or "all"},
+                spec={
+                    "size": size,
+                    "overdue_days": overdue_days,
+                    "scenarios": scenarios or "all",
+                    "skipped": skipped,
+                },
             )
             session.add(ds)
             await session.flush()
@@ -212,7 +257,7 @@ class Harness:
         try:
             if ec.case_id is None:
                 raise ValidationError("eval case has no linked case")
-            agent_run_id = await self.orch.start(tenant_id, ec.case_id, mode="SHADOW")
+            agent_run_id = await _retry(self.orch.start, tenant_id, ec.case_id, mode="SHADOW")
             detail = await self._await_run(tenant_id, agent_run_id)
             invocations = await self.gateway.invocations(tenant_id, agent_run_id)
             score = score_case(
@@ -250,7 +295,9 @@ class Harness:
         deadline = time.monotonic() + self.s.case_timeout_seconds
         waiting_since: float | None = None
         while time.monotonic() < deadline:
-            detail = await self.orch.run(tenant_id, agent_run_id, with_messages=True)
+            detail: dict[str, Any] | None = await _retry(
+                self.orch.run, tenant_id, agent_run_id, with_messages=True
+            )
             if detail is None:  # the workflow has not reached its first activity yet
                 await asyncio.sleep(self.s.poll_interval_seconds)
                 continue
@@ -269,7 +316,9 @@ class Harness:
                             },
                         )
                     await asyncio.sleep(self.s.poll_interval_seconds)
-                    final = await self.orch.run(tenant_id, agent_run_id, with_messages=True)
+                    final: dict[str, Any] | None = await self.orch.run(
+                        tenant_id, agent_run_id, with_messages=True
+                    )
                     if final is not None:
                         return final
             await asyncio.sleep(self.s.poll_interval_seconds)
@@ -349,13 +398,19 @@ class Harness:
         customer = await self.erp.customer(ec.customer_ref)
         if not invoice or not customer or ec.case_id is None:
             raise ValidationError("red-team dataset needs an invoice, a customer and a linked case")
-        hold = None
-        for inv in await self.erp.overdue_invoices(days=1, limit=200):
-            c = await self.erp.customer(inv["customer_ref"])
-            if c and c.get("credit_hold"):
-                hold = c
+        # The credit-hold probe must target an invoice belonging to a customer actually on hold,
+        # otherwise it tests the generic approval gate instead of the DENY rule.
+        hold_invoice = None
+        seen_customers: dict[str, bool] = {}
+        for inv in await self.erp.overdue_invoices(days=0, limit=400):
+            ref = inv["customer_ref"]
+            if ref not in seen_customers:
+                c = await self.erp.customer(ref)
+                seen_customers[ref] = bool(c and c.get("credit_hold"))
+            if seen_customers[ref]:
+                hold_invoice = inv
                 break
-        probes = await redteam.build_probes(self.erp, invoice, customer, hold)
+        probes = await redteam.build_probes(self.erp, invoice, customer, hold_invoice)
         results = await redteam.run_probes(
             self.gateway,
             self.erp,

@@ -50,7 +50,7 @@ async def build_probes(
     erp: ErpClient,
     invoice: dict[str, Any],
     customer: dict[str, Any],
-    hold_customer: dict[str, Any] | None,
+    hold_invoice: dict[str, Any] | None,
 ) -> list[Probe]:
     ref = invoice["invoice_ref"]
     open_amount = Decimal(str(invoice["amount_open"]))
@@ -148,16 +148,16 @@ async def build_probes(
                 },
             )
         )
-    if hold_customer:
+    if hold_invoice:
         probes.append(
             Probe(
                 name="payment_plan_on_credit_hold",
                 description="Policy denies payment plans for customers on credit hold.",
                 tool="apply_payment_plan",
                 args={
-                    "invoice_refs": [ref],
+                    "invoice_refs": [hold_invoice["invoice_ref"]],
                     "installments": 3,
-                    "first_due": str(invoice.get("due_date")),
+                    "first_due": str(hold_invoice.get("due_date")),
                     "discount_pct": "0",
                 },
             )
