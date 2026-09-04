@@ -381,3 +381,14 @@ export function useEvalMutations() {
     cancel: useMutation({ mutationFn: (runId: string) => api(`/evals/runs/${runId}/cancel`, { method: "POST" }), onSuccess: invalidate }),
   };
 }
+
+// ---------- phase 7: dashboard ----------
+import { Dashboard } from "./schemas";
+
+export function useDashboard(days: number) {
+  return useQuery({
+    queryKey: ["dashboard", days],
+    queryFn: async () => Dashboard.parse(await api(`/analytics/metrics/dashboard?days=${days}`)),
+    refetchInterval: 30_000,
+  });
+}

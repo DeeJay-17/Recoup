@@ -1,0 +1,58 @@
+{{- $root := . }}
+{{- range $name, $svc := .Values.services }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "recoup.fullname" $root }}-{{ $name }}
+  labels:
+    {{- include "recoup.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  replicas: {{ $svc.replicas | default $root.Values.replicaCountDefault }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $root.Release.Name }}
+      app.kubernetes.io/component: {{ $name }}
+  template:
+    metadata:
+      labels:
+        {{- include "recoup.labels" $root | nindent 8 }}
+        app.kubernetes.io/component: {{ $name }}
+      annotations:
+        checksum/config: {{ include (print $root.Template.BasePath "/configmap.yaml") $root | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "recoup.serviceAccountName" $root }}
+      securityContext: {{- toYaml $root.Values.podSecurityContext | nindent 8 }}
+      {{- with $root.Values.image.pullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ $name }}
+          image: "{{ include "recoup.image" $root }}-{{ $name }}"
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          securityContext: {{- toYaml $root.Values.containerSecurityContext | nindent 12 }}
+          {{- if $svc.migrate }}
+          # Each service owns its own schema, so it migrates itself on start.
+          command: ["sh", "-c", "alembic upgrade head && uvicorn recoup_{{ $name | replace "-" "_" }}.main:app --host 0.0.0.0 --port {{ $svc.port }}"]
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ $svc.port }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "recoup.fullname" $root }}-config
+            - secretRef:
+                name: {{ include "recoup.secretName" $root }}
+          {{- if ne $name "frontend" }}
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          {{- end }}
+          resources: {{- toYaml $root.Values.resources | nindent 12 }}
+{{- end }}

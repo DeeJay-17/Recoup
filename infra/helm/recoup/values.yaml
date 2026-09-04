@@ -1,0 +1,90 @@
+# Recoup Helm values.
+#
+# Stateful dependencies (PostgreSQL with pgvector, Kafka/Redpanda, Temporal, Redis, MinIO) are
+# expected to exist already: managed services in production, or their own charts in a dev cluster.
+# This chart deploys Recoup's own stateless services and points them at those endpoints.
+
+image:
+  registry: ghcr.io
+  repository: your-org/recoup
+  tag: ""            # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+nameOverride: ""
+replicaCountDefault: 1
+
+# Endpoints of the dependencies. Secrets (DATABASE_URL, LLM_API_KEY, JWT_SECRET) come from
+# existingSecret when set; otherwise the chart creates a Secret from the values below.
+config:
+  environment: prod
+  logLevel: INFO
+  logJson: "true"
+  kafkaBootstrapServers: redpanda:9092
+  redisUrl: redis://redis:6379/0
+  temporalAddress: temporal:7233
+  temporalNamespace: default
+  otelEndpoint: http://otel-collector:4317
+  defaultTenantSlug: acme
+  llm:
+    provider: google_genai
+    modelFast: gemini-2.5-flash
+    modelStrong: gemini-2.5-pro
+    fallbackProvider: heuristic
+    baseUrl: ""
+  embeddings:
+    provider: ""     # blank follows the LLM provider
+    model: ""
+    dim: "768"
+  smtp:
+    host: mailpit
+    port: "1025"
+    mailpitApiUrl: http://mailpit:8025
+    inboundMailbox: ar@acme-demo.com
+
+secrets:
+  existingSecret: ""          # name of a Secret holding DATABASE_URL / JWT_SECRET / LLM_API_KEY
+  databaseUrl: postgresql+asyncpg://recoup:recoup@postgres:5432/recoup
+  jwtSecret: change-me
+  llmApiKey: ""
+
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits: { memory: 1Gi }
+
+# Every service is the same shape: one image, one port, its own env additions.
+# `migrate: true` runs `alembic upgrade head` before uvicorn (each service owns its schema).
+services:
+  iam:           { port: 8000, migrate: true,  public: true }
+  mock-erp:      { port: 8000, migrate: true,  public: false }
+  case:          { port: 8000, migrate: true,  public: false, replicas: 2 }
+  policy:        { port: 8000, migrate: true,  public: false }
+  communication: { port: 8000, migrate: true,  public: false }
+  tool-gateway:  { port: 8000, migrate: true,  public: false, replicas: 2 }
+  knowledge:     { port: 8000, migrate: true,  public: false }
+  orchestrator:  { port: 8000, migrate: true,  public: false, replicas: 2 }
+  evals:         { port: 8000, migrate: true,  public: false }
+  analytics:     { port: 8000, migrate: true,  public: false }
+  realtime:      { port: 8000, migrate: false, public: false }
+  gateway:       { port: 8000, migrate: false, public: true }
+  frontend:      { port: 80,   migrate: false, public: true }
+
+ingress:
+  enabled: false
+  className: nginx
+  host: recoup.example.com
+  tls: []
+  annotations: {}
+
+serviceAccount:
+  create: true
+  name: ""
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  seccompProfile: { type: RuntimeDefault }
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities: { drop: ["ALL"] }

@@ -36,6 +36,7 @@ dev = [
   "recoup-realtime",
   "recoup-knowledge",
   "recoup-evals",
+  "recoup-analytics",
 ]
 
 [tool.uv.sources.recoup-iam]
@@ -60,6 +61,8 @@ workspace = true
 workspace = true
 [tool.uv.sources.recoup-evals]
 workspace = true
+[tool.uv.sources.recoup-analytics]
+workspace = true
 
 [tool.ruff]
 line-length = 100
@@ -74,7 +77,9 @@ extend-exclude = ["alembic/versions"]
 "scripts/simulate_customer.py" = ["E501"]
 "services/knowledge/**/*.py" = ["E501"]
 "services/evals/**/*.py" = ["E501"]
+"services/analytics/**/*.py" = ["E501"]
 "scripts/eval.py" = ["E501"]
+"scripts/loadtest.py" = ["E501"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC", "SIM", "RUF"]

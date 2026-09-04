@@ -171,6 +171,21 @@ console invalidates TanStack queries on `case.*`, `agent.*`, `comm.*`, `tool.*` 
   refused.
 * `scripts/eval.py` is the CI entry point (`build`, `run`, `redteam`, `gate`, `compare`).
 
+## Analytics (phase 7)
+
+* One consumer group reads every topic from the beginning into `analytics`: `fact_events` (the
+  replay log), `dim_case`, `fact_agent_run`, `fact_agent_step`, `fact_action`, `fact_tool_call`,
+  `fact_email`. Every handler is an idempotent upsert keyed by event or entity id, so replaying
+  the topic rebuilds the same tables and a fresh database catches up on its own.
+* Cases can be referenced by an event before `case.created` is consumed (topics are read in
+  parallel), so case-shaped updates upsert a stub row rather than dropping the update.
+* Metrics are SQL over that read model only. Definitions worth stating: *weighted age* is
+  `sum(amount * days_overdue) / sum(amount)` over open cases, a DSO proxy rather than textbook DSO;
+  *autonomy* is the share of proposals policy allowed outright; *approved unedited* is approvals
+  over all human decisions; an *executed action* counts only money and outbound tools, never
+  `propose_action` or a note.
+* The dashboard is one round trip (`/metrics/dashboard`), and every chart has a table view.
+
 ## Deviations from the plan (so far)
 
 * ERP adapter is a library (`libs/recoup-erp-adapter`) rather than a network service; a real
@@ -181,6 +196,9 @@ console invalidates TanStack queries on `case.*`, `agent.*`, `comm.*`, `tool.*` 
   phase 4 behind the same `classify_tone` tool (the *decision* stays in the policy engine).
 * PII redaction is regex-based (phones, SSN/card-like numbers); Presidio can replace `redact_text`.
 * Cedar was not used; the JSON rule grammar in `recoup_policy.engine` is small enough to own.
+* The dashboard's charts are hand-rolled SVG against a validated palette rather than a chart
+  library: the mark specs (rounded data-ends, 2px surface gaps, direct end labels, crosshair
+  tooltips) are easier to hit exactly than to override, and it keeps the console dependency-free.
 * Langfuse is not run as a container: every model call emits an OpenTelemetry GenAI span with tokens
   and cost, so pointing `OTEL_EXPORTER_OTLP_ENDPOINT` at Langfuse (or keeping Tempo) is a config
   choice rather than another stateful service in the compose file.

@@ -28,15 +28,15 @@ jobs:
           uv run ruff format --check .
       - name: typecheck
         run: |
-          for p in libs/recoup-common libs/recoup-erp-adapter services/iam services/mock-erp services/case services/gateway services/policy services/communication services/tool-gateway services/orchestrator services/realtime services/knowledge services/evals libs/recoup-llm; do
+          for p in libs/recoup-common libs/recoup-erp-adapter services/iam services/mock-erp services/case services/gateway services/policy services/communication services/tool-gateway services/orchestrator services/realtime services/knowledge services/evals services/analytics libs/recoup-llm; do
             (cd $p && uv run --project ../.. mypy .) || exit 1
           done
       - name: migrations apply cleanly
         run: |
-          for s in iam mock-erp case policy communication tool-gateway orchestrator knowledge evals; do (cd services/$s && uv run --project ../.. alembic upgrade head) || exit 1; done
+          for s in iam mock-erp case policy communication tool-gateway orchestrator knowledge evals analytics; do (cd services/$s && uv run --project ../.. alembic upgrade head) || exit 1; done
       - name: tests (unit + integration)
         run: |
-          for p in libs/recoup-common libs/recoup-erp-adapter services/iam services/mock-erp services/case services/gateway services/policy services/communication services/tool-gateway services/orchestrator services/realtime services/knowledge services/evals libs/recoup-llm; do
+          for p in libs/recoup-common libs/recoup-erp-adapter services/iam services/mock-erp services/case services/gateway services/policy services/communication services/tool-gateway services/orchestrator services/realtime services/knowledge services/evals services/analytics libs/recoup-llm; do
             (cd $p && uv run --project ../.. pytest -q --rootdir=. -p no:cacheprovider) || exit 1
           done
 
@@ -62,7 +62,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - name: build images (no push yet)
-        run: docker compose build iam mock-erp case gateway policy communication tool-gateway orchestrator realtime knowledge evals frontend
+        run: docker compose build iam mock-erp case gateway policy communication tool-gateway orchestrator realtime knowledge evals analytics frontend
 
   eval-gate:
     runs-on: ubuntu-latest

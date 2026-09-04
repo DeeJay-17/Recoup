@@ -24,8 +24,8 @@ React 18 + TypeScript + TanStack + Tailwind.
 | 4 Resolution agents + HITL | Reconciler, Negotiator, Communicator, intent extractor; deterministic executor; approval and customer-wait paths with follow-up cadence; approval inbox with field editors, diff view, feedback codes, keyboard shortcuts; scripted customer persona | ✅ |
 | 5 Memory & RAG | Knowledge Service: provider-agnostic embeddings (Gemini default, hashing fallback), pgvector HNSW + Postgres FTS with reciprocal rank fusion, SOP/contract/email/resolution indexing, per-customer memory with provenance written after every case, knowledge tools for agents, Customer 360 page | ✅ |
 | 6 Evals & observability | Shadow mode (agents run with side effects disabled), Eval Service with golden datasets from ground truth, deterministic + LLM-judged scoring, adversarial red-team probes, run comparison, CI gate, OpenTelemetry GenAI spans for every model call | ✅ |
-| 7 Analytics & polish | Analytics service, manager dashboard, Helm chart, load test | ⏳ next |
-| 8 | launch: README, demo video, ADRs, blog post | planned |
+| 7 Analytics & polish | Analytics service projecting the event stream into a read model, manager dashboard (exposure, aging heatmap, funnel, agent latency, escalation reasons), Helm chart, read-path load test | ✅ |
+| 8 Launch | demo video, blog post, public deploy | ⏳ next |
 
 ## Choosing an LLM provider
 
@@ -94,6 +94,8 @@ services/realtime        Kafka -> WebSocket fan-out for the live console
 libs/recoup-llm          provider-agnostic LLM client (LangChain init_chat_model), tiers, pricing, heuristic stand-in, embeddings
 services/knowledge       hybrid retrieval (pgvector + FTS, RRF), document ingestion, customer memory writer, SOPs
 services/evals           golden datasets, shadow replay, deterministic + LLM-judged scoring, red-team probes, CI gate
+services/analytics       Kafka -> read model (dim_case, fact_agent_run/step/action/tool/email) and the dashboard metrics
+infra/helm/recoup        Helm chart for the stateless services (bring your own Postgres/Kafka/Temporal/Redis)
 frontend                 React console: work queue, case workspace, approval inbox
 infra/                   postgres init, OTel collector, Tempo, Grafana provisioning
 scripts/seed.py          one-shot demo seed
@@ -177,6 +179,24 @@ Every model call is an OpenTelemetry span (`gen_ai.*` attributes, tokens and cos
 up in Grafana/Tempo as one trace from the UI click through the workflow, tools and model calls.
 Point `OTEL_EXPORTER_OTLP_ENDPOINT` at Langfuse's OTLP endpoint instead of the collector to get the
 same data there.
+
+## Operating numbers
+
+```bash
+make loadtest      # read-path load: work queue, case workspace, dashboard
+make helm-lint     # lint and render the chart
+```
+
+The dashboard at `/dashboard` is built only from the event stream: the analytics service consumes
+every topic into its own read model, so no query reaches into another service's tables. It shows
+open exposure and an amount-weighted age (an honest DSO proxy, not textbook DSO, which needs
+credit sales), an aging heatmap by root cause, the case funnel, autonomy and approval-without-edit
+rates, cost per closed case, agent step latency, and why cases reach a human.
+
+Read-path load on a laptop Docker stack, 16 workers for 15 seconds: **151 req/s, all 200s, p95
+245-308 ms** across the work queue, the aggregated case workspace and the dashboard. The gateway's
+per-tenant limiter (`GATEWAY_RATE_LIMIT`, 600/min by default) is the first ceiling you will hit;
+raise it to measure service capacity rather than the limiter.
 
 ## Development
 

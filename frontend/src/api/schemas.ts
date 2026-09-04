@@ -428,3 +428,41 @@ export const EvalRunDetail = z.object({
   results: z.array(EvalResult),
 });
 export type EvalRunDetail = z.infer<typeof EvalRunDetail>;
+
+// ---------- phase 7: analytics ----------
+export const Dashboard = z.object({
+  window_days: z.number(),
+  summary: z.object({
+    window_days: z.number(),
+    open_cases: z.number(),
+    open_amount: z.number(),
+    dso_proxy_days: z.number(),
+    closed_cases: z.number(),
+    median_hours_to_close: z.number(),
+    escalation_rate: z.number(),
+    untouched_rate: z.number(),
+    actions_proposed: z.number(),
+    autonomy_rate: z.number(),
+    approval_without_edit_rate: z.number(),
+    agent_runs: z.number(),
+    cost_usd: z.number(),
+    tokens: z.number(),
+    cost_per_closed_case: z.number(),
+    avg_steps: z.number(),
+  }),
+  aging: z.object({
+    buckets: z.array(z.string()),
+    root_causes: z.array(z.string()),
+    cells: z.array(z.object({ root_cause: z.string(), bucket: z.string(), cases: z.number(), amount: z.number() })),
+    totals: z.array(z.object({ bucket: z.string(), cases: z.number(), amount: z.number() })),
+  }),
+  trend: z.array(z.object({ day: z.string(), opened: z.number(), closed: z.number(), escalated: z.number(), cost: z.number() })),
+  funnel: z.array(z.object({ stage: z.string(), cases: z.number(), share: z.number() })),
+  agents: z.object({
+    by_agent: z.array(z.object({ agent: z.string(), steps: z.number(), errors: z.number(), avg_latency_ms: z.number(), p95_latency_ms: z.number(), tokens: z.number(), error_rate: z.number() })),
+    by_root_cause: z.array(z.object({ root_cause: z.string(), cases: z.number(), resolved: z.number(), escalated: z.number(), avg_cost: z.number(), avg_steps: z.number(), resolution_rate: z.number() })),
+    tools: z.array(z.object({ tool: z.string(), calls: z.number(), ok: z.number(), gated: z.number(), avg_latency_ms: z.number() })),
+  }),
+  escalations: z.array(z.object({ reason: z.string(), cases: z.number(), avg_steps: z.number() })),
+});
+export type Dashboard = z.infer<typeof Dashboard>;

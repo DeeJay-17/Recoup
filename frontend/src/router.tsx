@@ -7,6 +7,7 @@ import { ApprovalsPage } from "@/routes/approvals";
 import { PoliciesPage } from "@/routes/policies";
 import { AgentsPage } from "@/routes/agents";
 import { CustomerPage } from "@/routes/customer";
+import { DashboardPage } from "@/routes/dashboard";
 import { useAuth } from "@/store/auth";
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
@@ -40,11 +41,12 @@ const agentsRoute = createRoute({
   validateSearch: (s: Record<string, unknown>): { run?: string } => ({ run: typeof s.run === "string" ? s.run : undefined }),
 });
 
+const dashboardRoute = createRoute({ getParentRoute: () => appRoute, path: "/dashboard", component: DashboardPage });
 const customerRoute = createRoute({ getParentRoute: () => appRoute, path: "/customers/$customerRef", component: CustomerPage });
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
-  appRoute.addChildren([indexRoute, casesRoute, caseDetailRoute, approvalsRoute, policiesRoute, agentsRoute, customerRoute]),
+  appRoute.addChildren([indexRoute, casesRoute, caseDetailRoute, approvalsRoute, policiesRoute, agentsRoute, customerRoute, dashboardRoute]),
 ]);
 
 export const router = createRouter({ routeTree });

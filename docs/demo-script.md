@@ -96,3 +96,13 @@
 30. `make eval-gate` is what CI runs: smoke suite plus red-team, non-zero exit below the thresholds.
 31. Grafana → Explore → Tempo: a case's trace now includes a `chat <model>` span per model call with
     `gen_ai.*` attributes, token counts and cost.
+
+## Phase 7: the manager view
+
+32. **Dashboard** (default landing page): open exposure and amount-weighted age, cases opened vs
+    closed vs escalated over time, an aging heatmap by root cause, the case funnel, autonomy and
+    approval-without-edit rates, cost per closed case, agent latency and error counts, and the
+    reasons cases reach a human. Every chart has a table view (`table view` toggle).
+33. The numbers come from the event stream: stop the analytics container, wipe its schema, start it
+    again, and it rebuilds from the topic history.
+34. `make loadtest` for the read path, `make helm-lint` to render the Kubernetes chart.

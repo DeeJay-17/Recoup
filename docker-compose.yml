@@ -18,6 +18,7 @@ x-service-env: &service-env
   ORCHESTRATOR_URL: http://orchestrator:8000
   KNOWLEDGE_URL: http://knowledge:8000
   EVALS_URL: http://evals:8000
+  ANALYTICS_URL: http://analytics:8000
   EMBED_DIM: ${EMBED_DIM:-768}
   TEMPORAL_ADDRESS: temporal:7233
 
@@ -290,6 +291,19 @@ services:
       tool-gateway: { condition: service_started }
       mock-erp: { condition: service_healthy }
 
+  analytics:
+    build: { context: ., dockerfile: services/analytics/Dockerfile }
+    environment: *service-env
+    ports: ["8011:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redpanda: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/healthz')\""]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
   realtime:
     build: { context: ., dockerfile: services/realtime/Dockerfile }
     environment: *service-env
@@ -302,8 +316,9 @@ services:
     environment:
       <<: *service-env
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+      RATE_LIMIT_PER_MINUTE: ${GATEWAY_RATE_LIMIT:-600}
     ports: ["8000:8000"]
-    depends_on: [iam, case, mock-erp, policy, communication, tool-gateway, orchestrator, knowledge, evals]
+    depends_on: [iam, case, mock-erp, policy, communication, tool-gateway, orchestrator, knowledge, evals, analytics]
 
   frontend:
     build: { context: ./frontend }

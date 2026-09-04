@@ -4,6 +4,7 @@ import { Button } from "./ui";
 import { useLiveEvents } from "@/hooks/useLiveEvents";
 
 const nav = [
+  { to: "/dashboard", label: "Dashboard" },
   { to: "/cases", label: "Cases" },
   { to: "/approvals", label: "Approvals" },
   { to: "/policies", label: "Policies" },

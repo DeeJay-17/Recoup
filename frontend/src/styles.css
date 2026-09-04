@@ -6,3 +6,51 @@
 body {
   @apply bg-slate-50 text-slate-900 antialiased;
 }
+
+/* ---------- data-visualisation tokens ----------
+   Roles, not raw hex, so the chart body never hard-codes a colour. Values come from the
+   validated reference palette: categorical slots 1-3 (blue/orange/aqua) pass the CVD and
+   normal-vision gates on both surfaces; aqua sits below 3:1 on the light surface, which the
+   direct labels and table views relieve.
+   The app is light-only today, so the dark steps are exposed under an explicit theme stamp
+   rather than a prefers-color-scheme block: charts must not go dark inside a light page. */
+.viz-root {
+  color-scheme: light;
+  --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --seq-1: #cde2fb;
+  --seq-2: #9ec5f4;
+  --seq-3: #6da7ec;
+  --seq-4: #3987e5;
+  --seq-5: #256abf;
+  --ord-1: #86b6ef;
+  --ord-6: #1c5cab;
+  --status-good: #0ca30c;
+  --status-critical: #d03b3b;
+}
+:root[data-theme="dark"] .viz-root {
+  color-scheme: dark;
+  --surface-1: #1a1a19;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --seq-1: #104281;
+  --seq-2: #184f95;
+  --seq-3: #1c5cab;
+  --seq-4: #256abf;
+  --seq-5: #3987e5;
+  --ord-1: #184f95;
+  --ord-6: #86b6ef;
+}

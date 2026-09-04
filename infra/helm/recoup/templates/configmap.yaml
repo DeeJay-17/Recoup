@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "recoup.fullname" . }}-config
+  labels: {{- include "recoup.labels" . | nindent 4 }}
+data:
+  ENVIRONMENT: {{ .Values.config.environment | quote }}
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  LOG_JSON: {{ .Values.config.logJson | quote }}
+  KAFKA_BOOTSTRAP_SERVERS: {{ .Values.config.kafkaBootstrapServers | quote }}
+  REDIS_URL: {{ .Values.config.redisUrl | quote }}
+  TEMPORAL_ADDRESS: {{ .Values.config.temporalAddress | quote }}
+  TEMPORAL_NAMESPACE: {{ .Values.config.temporalNamespace | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.config.otelEndpoint | quote }}
+  DEFAULT_TENANT_SLUG: {{ .Values.config.defaultTenantSlug | quote }}
+  LLM_PROVIDER: {{ .Values.config.llm.provider | quote }}
+  LLM_MODEL_FAST: {{ .Values.config.llm.modelFast | quote }}
+  LLM_MODEL_STRONG: {{ .Values.config.llm.modelStrong | quote }}
+  LLM_FALLBACK_PROVIDER: {{ .Values.config.llm.fallbackProvider | quote }}
+  LLM_BASE_URL: {{ .Values.config.llm.baseUrl | quote }}
+  EMBED_PROVIDER: {{ .Values.config.embeddings.provider | quote }}
+  EMBED_MODEL: {{ .Values.config.embeddings.model | quote }}
+  EMBED_DIM: {{ .Values.config.embeddings.dim | quote }}
+  SMTP_HOST: {{ .Values.config.smtp.host | quote }}
+  SMTP_PORT: {{ .Values.config.smtp.port | quote }}
+  MAILPIT_API_URL: {{ .Values.config.smtp.mailpitApiUrl | quote }}
+  INBOUND_MAILBOX: {{ .Values.config.smtp.inboundMailbox | quote }}
+  {{- $full := include "recoup.fullname" . }}
+  {{- range $name, $svc := .Values.services }}
+  {{- if ne $name "frontend" }}
+  {{ $name | upper | replace "-" "_" }}_URL: "http://{{ $full }}-{{ $name }}:{{ $svc.port }}"
+  {{- end }}
+  {{- end }}
+  MOCK_ERP_URL: "http://{{ $full }}-mock-erp:8000"
+  TOOL_GATEWAY_URL: "http://{{ $full }}-tool-gateway:8000"

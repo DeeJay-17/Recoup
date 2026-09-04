@@ -14,6 +14,7 @@ class Settings(BaseServiceSettings):
     orchestrator_url: str = "http://localhost:8007"
     knowledge_url: str = "http://localhost:8009"
     evals_url: str = "http://localhost:8010"
+    analytics_url: str = "http://localhost:8011"
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
     rate_limit_per_minute: int = 600
     upstream_timeout_seconds: float = 30.0

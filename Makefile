@@ -1,8 +1,8 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 COMPOSE ?= docker compose
-SERVICES := iam mock-erp case policy communication tool-gateway orchestrator knowledge evals
-PY_PKGS := libs/recoup-common libs/recoup-erp-adapter services/iam services/mock-erp services/case services/gateway services/policy services/communication services/tool-gateway services/orchestrator services/realtime services/knowledge services/evals libs/recoup-llm
+SERVICES := iam mock-erp case policy communication tool-gateway orchestrator knowledge evals analytics
+PY_PKGS := libs/recoup-common libs/recoup-erp-adapter services/iam services/mock-erp services/case services/gateway services/policy services/communication services/tool-gateway services/orchestrator services/realtime services/knowledge services/evals services/analytics libs/recoup-llm
 
 help: ## Show targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -33,6 +33,12 @@ eval-redteam: ## Run the adversarial probe suite (must report zero unauthorized 
 eval-gate: ## Run the smoke suite and fail if metrics fall below the gates (used by CI)
 	uv run python scripts/eval.py gate --size $${SIZE:-20}
 
+loadtest: ## Read-path load test against the gateway (CONCURRENCY=20 SECONDS=20)
+	uv run python scripts/loadtest.py --concurrency $${CONCURRENCY:-20} --seconds $${SECONDS:-20}
+
+helm-lint: ## Lint and render the Helm chart
+	helm lint infra/helm/recoup && helm template recoup infra/helm/recoup >/dev/null && echo "chart renders"
+
 up: env ## Start the full stack
 	$(COMPOSE) up -d --build
 
@@ -40,7 +46,7 @@ down: ## Stop the stack
 	$(COMPOSE) down
 
 logs: ## Tail service logs
-	$(COMPOSE) logs -f iam mock-erp case gateway policy communication tool-gateway orchestrator realtime knowledge evals
+	$(COMPOSE) logs -f iam mock-erp case gateway policy communication tool-gateway orchestrator realtime knowledge evals analytics
 
 # ---------- database ----------
 migrate: ## Run alembic migrations for every service (uses DATABASE_URL from .env)
@@ -82,6 +88,8 @@ dev-knowledge: ## Run the Knowledge service locally on :8009
 	cd services/knowledge && uv run uvicorn recoup_knowledge.main:app --reload --port 8009
 dev-evals: ## Run the Eval service locally on :8010
 	cd services/evals && uv run uvicorn recoup_evals.main:app --reload --port 8010
+dev-analytics: ## Run the Analytics service locally on :8011
+	cd services/analytics && uv run uvicorn recoup_analytics.main:app --reload --port 8011
 dev-gateway: ## Run API gateway locally on :8000
 	cd services/gateway && uv run uvicorn recoup_gateway.main:app --reload --port 8000
 dev-web: ## Run the React console on :5173
@@ -105,4 +113,4 @@ test: ## Unit tests (no DB required)
 test-all: ## All tests incl. integration (requires TEST_DATABASE_URL)
 	@for p in $(PY_PKGS); do echo ">> pytest $$p"; (cd $$p && uv run --project ../.. pytest -q --rootdir=. -p no:cacheprovider) || exit 1; done
 
-.PHONY: help install env infra-up up down logs migrate migrate-down seed simulate-reply demo run-agents eval-build eval eval-redteam eval-gate ingest dev-iam dev-orchestrator dev-realtime dev-knowledge dev-evals dev-erp dev-case dev-policy dev-comm dev-tools dev-gateway dev-web lint fmt test test-all
+.PHONY: help install env infra-up up down logs migrate migrate-down seed simulate-reply demo run-agents eval-build eval eval-redteam eval-gate loadtest helm-lint ingest dev-iam dev-orchestrator dev-realtime dev-knowledge dev-evals dev-analytics dev-erp dev-case dev-policy dev-comm dev-tools dev-gateway dev-web lint fmt test test-all

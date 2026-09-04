@@ -1,0 +1,6 @@
+apiVersion: v2
+name: recoup
+description: Recoup — autonomous accounts receivable & dispute resolution agents
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

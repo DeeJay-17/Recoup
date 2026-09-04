@@ -11,6 +11,7 @@ resolution-markers = [
 [manifest]
 members = [
     "recoup",
+    "recoup-analytics",
     "recoup-case",
     "recoup-common",
     "recoup-communication",
@@ -2433,6 +2434,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
+    { name = "recoup-analytics" },
     { name = "recoup-case" },
     { name = "recoup-common" },
     { name = "recoup-communication" },
@@ -2460,6 +2462,7 @@ dev = [
     { name = "pytest", specifier = ">=8.2" },
     { name = "pytest-asyncio", specifier = ">=0.23" },
     { name = "pytest-cov", specifier = ">=5.0" },
+    { name = "recoup-analytics", editable = "services/analytics" },
     { name = "recoup-case", editable = "services/case" },
     { name = "recoup-common", editable = "libs/recoup-common" },
     { name = "recoup-communication", editable = "services/communication" },
@@ -2475,6 +2478,21 @@ dev = [
     { name = "recoup-realtime", editable = "services/realtime" },
     { name = "recoup-tool-gateway", editable = "services/tool-gateway" },
     { name = "ruff", specifier = ">=0.5" },
+]
+
+[[package]]
+name = "recoup-analytics"
+version = "0.1.0"
+source = { editable = "services/analytics" }
+dependencies = [
+    { name = "recoup-common" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "recoup-common", editable = "libs/recoup-common" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
 
 [[package]]
