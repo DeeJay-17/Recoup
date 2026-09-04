@@ -70,9 +70,11 @@ export function EvalScorecard({ detail }: { detail: EvalRunDetail }) {
           ))}
         </div>
       )}
-      <table className="w-full text-xs">
+      {/* Eight columns do not fit a half-width card: scroll the table, never the page. */}
+      <div className="overflow-x-auto">
+      <table className="w-full min-w-[760px] text-xs [&_td]:pr-3 [&_th]:pr-3">
         <thead className="text-left text-slate-500">
-          <tr><th className="py-1">expected</th><th>triage</th><th>confirmed</th><th className="text-right">credit Δ</th><th className="text-right">steps</th><th className="text-right">cost</th><th>outcome</th><th>failures</th></tr>
+          <tr><th className="py-1">expected</th><th>triage</th><th>confirmed</th><th className="text-right">credit Δ</th><th className="text-right">steps</th><th className="text-right">cost</th><th>outcome</th><th className="pr-0">failures</th></tr>
         </thead>
         <tbody>
           {detail.results.map((r) => (
@@ -84,11 +86,12 @@ export function EvalScorecard({ detail }: { detail: EvalRunDetail }) {
               <td className="text-right tabular-nums">{r.steps}</td>
               <td className="text-right tabular-nums">${r.cost_usd.toFixed(3)}</td>
               <td>{r.terminal_status ?? r.status}</td>
-              <td className="text-slate-500">{r.failures.map(String).join("; ").slice(0, 80)}</td>
+              <td className="pr-0 text-slate-500">{r.failures.map(String).join("; ").slice(0, 80)}</td>
             </tr>
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

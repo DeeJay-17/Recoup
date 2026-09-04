@@ -5,6 +5,15 @@ short-payments and missing-PO holds. Agents triage, investigate, reconcile, nego
 outreach inside deterministic policy guardrails; humans approve, edit or take over from a React
 ops console. Every action is auditable and replayable.
 
+## Demo
+
+[![Recoup demo](docs/media/recoup-demo-poster.jpg)](docs/media/recoup-demo.mp4)
+
+**[Watch the 3-minute walkthrough](docs/media/recoup-demo.mp4)** — recorded against the running
+stack, captioned rather than narrated. It follows a pricing dispute from ingestion to a credit memo
+the customer confirms, then shows the policy engine, the approval inbox, the eval scorecard and the
+manager dashboard. [Segment index](docs/demo-video.md).
+
 > Full project plan and architecture: [`recoup-project-plan.md`](./recoup-project-plan.md) ·
 > Decisions: [`docs/adr/`](./docs/adr/) · Architecture notes: [`docs/architecture.md`](./docs/architecture.md)
 
@@ -25,7 +34,10 @@ React 18 + TypeScript + TanStack + Tailwind.
 | 5 Memory & RAG | Knowledge Service: provider-agnostic embeddings (Gemini default, hashing fallback), pgvector HNSW + Postgres FTS with reciprocal rank fusion, SOP/contract/email/resolution indexing, per-customer memory with provenance written after every case, knowledge tools for agents, Customer 360 page | ✅ |
 | 6 Evals & observability | Shadow mode (agents run with side effects disabled), Eval Service with golden datasets from ground truth, deterministic + LLM-judged scoring, adversarial red-team probes, run comparison, CI gate, OpenTelemetry GenAI spans for every model call | ✅ |
 | 7 Analytics & polish | Analytics service projecting the event stream into a read model, manager dashboard (exposure, aging heatmap, funnel, agent latency, escalation reasons), Helm chart, read-path load test | ✅ |
-| 8 Launch | demo video, blog post, public deploy | ⏳ next |
+| 8 Launch | architecture diagrams, [demo video](docs/media/recoup-demo.mp4), ADRs, load-test results | ✅ |
+
+Not done on purpose: the public deploy and the blog post. The Helm chart renders and validates
+against the Kubernetes schemas but has never been applied to a live cluster.
 
 ## Architecture
 
