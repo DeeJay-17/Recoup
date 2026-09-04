@@ -23,8 +23,9 @@ React 18 + TypeScript + TanStack + Tailwind.
 | 3 First agents | Provider-agnostic LLM layer (Gemini default), Temporal `CaseWorkflow`, LangGraph Supervisor + Triage + Investigator, prompt versions, model routing, Realtime WebSocket stream, Agents console | ✅ |
 | 4 Resolution agents + HITL | Reconciler, Negotiator, Communicator, intent extractor; deterministic executor; approval and customer-wait paths with follow-up cadence; approval inbox with field editors, diff view, feedback codes, keyboard shortcuts; scripted customer persona | ✅ |
 | 5 Memory & RAG | Knowledge Service: provider-agnostic embeddings (Gemini default, hashing fallback), pgvector HNSW + Postgres FTS with reciprocal rank fusion, SOP/contract/email/resolution indexing, per-customer memory with provenance written after every case, knowledge tools for agents, Customer 360 page | ✅ |
-| 6 Evals & observability | Eval Service, golden dataset, LLM-as-judge, CI eval gate, Langfuse, trace viewer | ⏳ next |
-| 7–8 | analytics, launch | planned |
+| 6 Evals & observability | Shadow mode (agents run with side effects disabled), Eval Service with golden datasets from ground truth, deterministic + LLM-judged scoring, adversarial red-team probes, run comparison, CI gate, OpenTelemetry GenAI spans for every model call | ✅ |
+| 7 Analytics & polish | Analytics service, manager dashboard, Helm chart, load test | ⏳ next |
+| 8 | launch: README, demo video, ADRs, blog post | planned |
 
 ## Choosing an LLM provider
 
@@ -92,6 +93,7 @@ services/orchestrator    Temporal CaseWorkflow + worker, LangGraph tool-loop age
 services/realtime        Kafka -> WebSocket fan-out for the live console
 libs/recoup-llm          provider-agnostic LLM client (LangChain init_chat_model), tiers, pricing, heuristic stand-in, embeddings
 services/knowledge       hybrid retrieval (pgvector + FTS, RRF), document ingestion, customer memory writer, SOPs
+services/evals           golden datasets, shadow replay, deterministic + LLM-judged scoring, red-team probes, CI gate
 frontend                 React console: work queue, case workspace, approval inbox
 infra/                   postgres init, OTel collector, Tempo, Grafana provisioning
 scripts/seed.py          one-shot demo seed
@@ -134,6 +136,27 @@ case.created (Kafka) ──> orchestrator starts CaseWorkflow(case-<id>) on Temp
 
 The console's **Agents** page shows every run's trace (steps, tool calls, tokens, models,
 prompt versions), lets managers edit and version prompts, and set per-tenant models.
+
+## Measuring the agents (phase 6)
+
+```bash
+make eval-build            # golden set from Mock ERP ground truth, balanced across root causes
+make eval                  # replay it in shadow mode and print the scorecard  (JUDGE=1 adds the LLM judge)
+make eval-redteam          # adversarial probes; must report zero unauthorized mutations
+make eval-gate             # smoke suite + red-team, exits non-zero below the thresholds (CI uses this)
+```
+
+Eval runs are **shadow runs**: the Tool Gateway refuses to execute any side-effecting tool when a
+run's mode is not `LIVE`, and the workflow skips the executor, case writes, escalation and memory
+writer. Policy is still evaluated, so a shadow run measures exactly what would have happened.
+Scores come from Mock ERP ground truth (root cause, expected credit memo) plus the tool-invocation
+audit (a `SUCCESS` on a money or outbound tool inside a shadow run is an unauthorized mutation),
+with an optional LLM judge for rationale faithfulness and email quality.
+
+Every model call is an OpenTelemetry span (`gen_ai.*` attributes, tokens and cost), so a case shows
+up in Grafana/Tempo as one trace from the UI click through the workflow, tools and model calls.
+Point `OTEL_EXPORTER_OTLP_ENDPOINT` at Langfuse's OTLP endpoint instead of the collector to get the
+same data there.
 
 ## Development
 

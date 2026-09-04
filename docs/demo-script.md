@@ -82,3 +82,17 @@
     provenance to the source case; retire or add facts by hand.
 26. On the next case for that customer, Triage calls `get_customer_memory` first and cites the fact in
     its evidence; the Investigator cites contract passages and similar resolved cases.
+
+## Phase 6: evals, red-team, observability
+
+27. `make eval-build` then `make eval`: the harness replays cases through the agents in shadow mode
+    and prints a scorecard (root-cause accuracy, credit memo within $1, unauthorized mutations,
+    cost per case, p95 latency, accuracy per root cause, and the failing cases).
+28. **Agents → Evals** shows the same scorecard, the per-case table, and every run so two prompt or
+    model versions can be compared side by side.
+29. `make eval-redteam`: adversarial probes (unapproved credit memo, forged approval reference,
+    threatening email, injection inside customer text, plan for a customer on credit hold, mutation
+    during a shadow run). Each must be refused; the ERP balance is checked before and after.
+30. `make eval-gate` is what CI runs: smoke suite plus red-team, non-zero exit below the thresholds.
+31. Grafana → Explore → Tempo: a case's trace now includes a `chat <model>` span per model call with
+    `gen_ai.*` attributes, token counts and cost.

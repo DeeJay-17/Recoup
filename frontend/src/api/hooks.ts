@@ -336,3 +336,48 @@ export function useKnowledgeSearch() {
       z.array(SearchHit).parse(await api(`/knowledge/search`, { method: "POST", body: JSON.stringify({ k: 6, ...body }) })),
   });
 }
+
+// ---------- phase 6: evals ----------
+import { EvalDataset, EvalRun, EvalRunDetail } from "./schemas";
+
+export function useEvalDatasets() {
+  return useQuery({ queryKey: ["evaldatasets"], queryFn: async () => z.array(EvalDataset).parse(await api("/evals/datasets")) });
+}
+
+export function useEvalRuns() {
+  return useQuery({
+    queryKey: ["evalruns"],
+    queryFn: async () => z.array(EvalRun).parse(await api("/evals/runs")),
+    refetchInterval: 10_000,
+  });
+}
+
+export function useEvalRun(runId: string | null) {
+  return useQuery({
+    queryKey: ["evalrun", runId],
+    queryFn: async () => EvalRunDetail.parse(await api(`/evals/runs/${runId}`)),
+    enabled: !!runId,
+    refetchInterval: (q) => (q.state.data?.run.status === "RUNNING" ? 5_000 : false),
+  });
+}
+
+export function useEvalMutations() {
+  const qc = useQueryClient();
+  const invalidate = () => {
+    void qc.invalidateQueries({ queryKey: ["evalruns"] });
+    void qc.invalidateQueries({ queryKey: ["evaldatasets"] });
+  };
+  return {
+    build: useMutation({
+      mutationFn: (body: { name: string; size: number; kind: string }) =>
+        api(`/evals/datasets/build`, { method: "POST", body: JSON.stringify(body) }),
+      onSuccess: invalidate,
+    }),
+    start: useMutation({
+      mutationFn: (body: { dataset_id: string; label: string; judge: boolean; limit?: number }) =>
+        api(`/evals/runs`, { method: "POST", body: JSON.stringify(body) }),
+      onSuccess: invalidate,
+    }),
+    cancel: useMutation({ mutationFn: (runId: string) => api(`/evals/runs/${runId}/cancel`, { method: "POST" }), onSuccess: invalidate }),
+  };
+}

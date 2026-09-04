@@ -145,6 +145,25 @@ async def list_invocations(
     return [InvocationOut.from_row(r) for r in rows.all()]
 
 
+@router.get("/internal/invocations", response_model=list[InvocationOut], tags=["internal"])
+async def internal_invocations(
+    session: SessionDep,
+    tenant_id: uuid.UUID,
+    run_id: uuid.UUID | None = None,
+    case_id: uuid.UUID | None = None,
+    limit: int = Query(default=500, ge=1, le=2000),
+) -> list[InvocationOut]:
+    """Audit rows for one agent run: the eval harness uses these to prove that a shadow run
+    executed nothing."""
+    stmt = select(ToolInvocation).where(ToolInvocation.tenant_id == tenant_id)
+    if run_id:
+        stmt = stmt.where(ToolInvocation.run_id == run_id)
+    if case_id:
+        stmt = stmt.where(ToolInvocation.case_id == case_id)
+    rows = await session.scalars(stmt.order_by(ToolInvocation.invoked_at).limit(limit))
+    return [InvocationOut.from_row(r) for r in rows.all()]
+
+
 @router.get("/catalog", tags=["audit"])
 async def catalog(principal: Viewer) -> list[dict[str, Any]]:
     """Full tool catalog (no case filtering) for the console's Agents page."""

@@ -217,6 +217,8 @@ class CaseActivities:
                     "tool_calls": [t.get("tool") for t in tool_calls],
                 },
             )
+        if state.mode != "LIVE":
+            return
         try:
             await self.d.cases.append_event(
                 state.tenant_id,
@@ -248,23 +250,37 @@ class CaseActivities:
         detail = await self.d.cases.get_detail(p.tenant_id, p.case_id)
         case = detail["case"]
         router = await self._router(p.tenant_id)
+        if p.mode != "LIVE":
+            # A replay must start where the first run started, or it would score the previous
+            # run's conclusions instead of this one's: hide the agent-derived state.
+            case = {
+                **case,
+                "status": "NEW",
+                "root_cause": None,
+                "root_cause_conf": None,
+                "agent_mode": "AUTONOMOUS",
+            }
         # Proposals from earlier runs stay authoritative: a re-run must not re-propose them.
-        prior_actions = [
-            ProposedActionRef(
-                action_id=a["id"],
-                action_type=a["action_type"],
-                policy_decision=a["policy_decision"],
-                required_role=a.get("required_role"),
-                status="EXECUTED"
-                if a.get("executed_at") or a["status"] == "AUTO_EXECUTED"
-                else a["status"],
-                proposed_by=a.get("proposed_by", "agent"),
-                summary=f"from earlier run: {a['action_type']}",
-                execution_result=a.get("execution_result"),
-            )
-            for a in detail["actions"]
-            if a["status"] not in ("REJECTED", "DENIED")
-        ]
+        prior_actions = (
+            []
+            if p.mode != "LIVE"
+            else [
+                ProposedActionRef(
+                    action_id=a["id"],
+                    action_type=a["action_type"],
+                    policy_decision=a["policy_decision"],
+                    required_role=a.get("required_role"),
+                    status="EXECUTED"
+                    if a.get("executed_at") or a["status"] == "AUTO_EXECUTED"
+                    else a["status"],
+                    proposed_by=a.get("proposed_by", "agent"),
+                    summary=f"from earlier run: {a['action_type']}",
+                    execution_result=a.get("execution_result"),
+                )
+                for a in detail["actions"]
+                if a["status"] not in ("REJECTED", "DENIED")
+            ]
+        )
         async with self.d.db.session() as session:
             bundle = {name: v.version for name, v in (await active_bundle(session)).items()}
             run = await session.get(AgentRun, p.run_id)
@@ -346,6 +362,7 @@ class CaseActivities:
             run_id=state.run_id,
             max_iterations=4,
             max_repairs=self.d.settings.max_repairs,
+            mode=state.mode,
         )
         summary = state.summary_for_prompt()
         try:
@@ -460,6 +477,7 @@ class CaseActivities:
             run_id=state.run_id,
             max_iterations=self.d.settings.max_agent_iterations,
             max_repairs=self.d.settings.max_repairs,
+            mode=state.mode,
         )
         summary = state.summary_for_prompt()
         try:
@@ -518,15 +536,24 @@ class CaseActivities:
         )
         return state
 
+    async def _record_triage(self, state: CaseState, body: dict[str, Any]) -> dict[str, Any]:
+        """Write the triage result to the case, unless this is a shadow/replay run."""
+        if state.mode != "LIVE":
+            return {
+                **state.case,
+                "root_cause": body["root_cause"],
+                "root_cause_conf": body["root_cause_conf"],
+            }
+        return await self.d.cases.triage(state.tenant_id, state.case_id, body)
+
     async def _apply_specialist_output(self, state: CaseState, name: str, output: Any) -> str:
         """Deterministic side effects of a specialist result (the model never writes state)."""
         if name == "Triage":
             t: TriageOutput = output
             state.triage = t
             top = t.top
-            case = await self.d.cases.triage(
-                state.tenant_id,
-                state.case_id,
+            case = await self._record_triage(
+                state,
                 {
                     "root_cause": top.cause,
                     "root_cause_conf": str(round(top.confidence, 3)),
@@ -540,9 +567,8 @@ class CaseActivities:
         if name == "Investigator":
             inv: InvestigationOutput = output
             state.investigation = inv
-            case = await self.d.cases.triage(
-                state.tenant_id,
-                state.case_id,
+            case = await self._record_triage(
+                state,
                 {
                     "root_cause": inv.confirmed_cause,
                     "root_cause_conf": str(round(inv.confidence, 3)),
@@ -637,6 +663,17 @@ class CaseActivities:
         activity.heartbeat(args.action_id)
         ref = next((a for a in state.actions if a.action_id == args.action_id), None)
         if ref is None:
+            return state
+        if state.mode != "LIVE" or args.action_id.startswith("shadow-"):
+            ref.status = "SIMULATED"
+            state.history.append(
+                StepSummary(
+                    step_no=state.step_no,
+                    agent="executor",
+                    kind="execute",
+                    summary=f"shadow: {ref.action_type} not executed",
+                )
+            )
             return state
         action = await self.d.cases.get_action(state.tenant_id, state.case_id, args.action_id)
         payload = {**action["payload"], **(action.get("human_final") or {})}
@@ -758,6 +795,45 @@ class CaseActivities:
         except Exception as e:
             log.warning("orchestrator.timeline_failed", error=str(e))
 
+    async def _finalize_shadow(
+        self, state: CaseState, status: str, reason: str, cause: str | None, conf: float | None
+    ) -> CaseOutcome:
+        """Shadow/replay runs record their outcome and nothing else: no escalation, no case
+        transition, no memory write. This is what makes the eval harness safe on live data."""
+        outcome = CaseOutcome(
+            run_id=state.run_id,
+            case_id=state.case_id,
+            status=status,  # type: ignore[arg-type]
+            reason=reason,
+            steps=state.step_no,
+            tokens_in=state.tokens_in,
+            tokens_out=state.tokens_out,
+            cost_usd=state.cost_usd,
+            root_cause=cause,
+            confidence=conf,
+        )
+        async with self.d.db.session() as session:
+            run = await session.get(AgentRun, state.run_id)
+            if run:
+                run.status = {
+                    "RESOLVED": "COMPLETED",
+                    "ESCALATED": "ESCALATED",
+                    "FAILED": "FAILED",
+                    "CANCELLED": "CANCELLED",
+                }[status]
+                run.phase, run.outcome = "done", outcome.model_dump(mode="json")
+                run.ended_at = run.updated_at = utcnow()
+                run.steps, run.tokens_in, run.tokens_out = (
+                    state.step_no,
+                    state.tokens_in,
+                    state.tokens_out,
+                )
+                run.cost_usd = Decimal(str(state.cost_usd))
+            await self._emit(
+                session, state, EventTypes.AGENT_RUN_COMPLETED, outcome.model_dump(mode="json")
+            )
+        return outcome
+
     @activity.defn(name="finalize_case")
     async def finalize_case(self, args: FinalizeArgs) -> CaseOutcome:
         state, status, reason = args.state, args.status, args.reason
@@ -766,6 +842,8 @@ class CaseActivities:
             inv.confirmed_cause if inv else (tri.top.cause if tri else state.case.get("root_cause"))
         )
         conf = inv.confidence if inv else (tri.top.confidence if tri else None)
+        if state.mode != "LIVE":
+            return await self._finalize_shadow(state, status, reason, cause, conf)
         if status in ("ESCALATED", "FAILED"):
             brief = _escalation_brief(state, reason)
             env = await self.d.gateway.invoke(

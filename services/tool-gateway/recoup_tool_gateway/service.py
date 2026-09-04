@@ -53,6 +53,7 @@ class InvokeRequest(BaseModel):
     args: dict[str, Any] = {}
     idempotency_key: str | None = None
     approval_ref: str | None = None
+    mode: str = "LIVE"  # LIVE | SHADOW | REPLAY: non-live never executes side effects
 
 
 class InvokeResponse(BaseModel):
@@ -169,6 +170,8 @@ class ToolService:
                     )
                 ctx._cache["idempotency_key"] = req.idempotency_key
             # 4. policy + approval gate
+            if req.mode != "LIVE" and spec.side_effect:
+                return await self._simulate(spec, req, ctx, args, row, t0)
             if spec.requires_policy_check:
                 args = await self._gate(spec, req, ctx, args, row)
             # 5. run
@@ -203,8 +206,9 @@ class ToolService:
             log.exception("tool.failed", tool=name)
             raise DomainError(f"tool '{name}' failed: {e}") from e
         finally:
-            row.latency_ms = int((time.perf_counter() - t0) * 1000)
-            await self._audit(row, spec, ctx)
+            if row.status != "SHADOW":
+                row.latency_ms = int((time.perf_counter() - t0) * 1000)
+                await self._audit(row, spec, ctx)
         return InvokeResponse(
             tool=name,
             status="SUCCESS",
@@ -226,6 +230,69 @@ class ToolService:
                 )
             )
             return row
+
+    async def _simulate(
+        self,
+        spec: ToolSpec,
+        req: InvokeRequest,
+        ctx: ToolContext,
+        args: BaseModel,
+        row: ToolInvocation,
+        t0: float,
+    ) -> InvokeResponse:
+        """Shadow/replay: evaluate policy for fidelity, then return a simulated result instead of
+        touching the ERP, mailbox or case. A policy DENY still comes back as a denial so the agent
+        re-plans exactly as it would live."""
+        decision: dict[str, Any] = {}
+        if spec.requires_policy_check:
+            context = await base_policy_context(ctx)
+            if spec.policy_facts is not None:
+                context.update(await spec.policy_facts(ctx, args))
+            action_type = spec.action_type or "*"
+            if action_type == "*":
+                action_type = str(getattr(args, "action_type", "*"))
+            decision = await ctx.policy.evaluate(
+                tenant_id=req.tenant_id,
+                case_id=req.case_id,
+                actor=req.actor,
+                action_type=action_type,
+                context=context,
+                record=False,
+            )
+            ctx._cache["policy_decision"] = decision
+            row.policy_decision = decision.get("decision")
+            if decision.get("decision") == "DENY":
+                raise PolicyDenied(
+                    decision.get("reason") or "denied by policy",
+                    details={"matched": decision.get("matched", []), "shadow": True},
+                )
+        result: dict[str, Any] = {
+            "shadow": True,
+            "tool": spec.name,
+            "policy_decision": decision.get("decision"),
+            "required_role": decision.get("required_role"),
+            "args": redact(truncate(args.model_dump(mode="json"), 2000)),
+        }
+        if spec.name == "propose_action":
+            result |= {
+                "action_id": f"shadow-{uuid.uuid4()}",
+                "status": "SHADOW",
+                "next_step": (
+                    "Shadow mode: the proposal was scored, not recorded. Call your submit tool now "
+                    "with this action_id."
+                ),
+            }
+        row.status, row.result = "SHADOW", result
+        row.latency_ms = int((time.perf_counter() - t0) * 1000)
+        await self._audit(row, spec, ctx)
+        return InvokeResponse(
+            tool=spec.name,
+            status="SUCCESS",
+            result=result,
+            policy_decision=row.policy_decision,
+            invocation_id=row.id,
+            latency_ms=row.latency_ms or 0,
+        )
 
     async def _gate(
         self,

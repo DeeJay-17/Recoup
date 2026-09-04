@@ -147,6 +147,30 @@ Each replica consumes all topics with a unique consumer group and fans events ou
 `/ws?token=<jwt>` to that tenant's sockets, with a small replay buffer for late joiners. The
 console invalidates TanStack queries on `case.*`, `agent.*`, `comm.*`, `tool.*` events.
 
+## Evals and shadow mode (phase 6)
+
+* **Shadow mode is a guardrail, not a flag the model can set.** `InvokeRequest.mode` reaches the Tool
+  Gateway from the run; for any `side_effect` tool with `mode != LIVE` the gateway evaluates policy
+  (so DENY still behaves like DENY) and then returns a simulated result, auditing the row as
+  `SHADOW`. `propose_action` hands back a `shadow-<uuid>` id so specialists still finish their work.
+  The workflow refuses to execute, write triage, escalate, transition or write memory in shadow.
+* `evals` owns `eval_datasets / eval_cases / eval_runs / eval_results`. A golden dataset is built by
+  joining overdue Mock ERP invoices that carry ground truth with the cases ingestion opened for
+  them, balanced round-robin across root causes so one scenario cannot dominate the score.
+* The runner starts one shadow run per case through the orchestrator's internal API, polls it, and
+  cancels runs that park on a customer or approval wait (a shadow run has no real human to wait for).
+* Deterministic scores: root-cause accuracy (Investigator-confirmed and Triage top-1), credit memo
+  within $1 of ground truth, unauthorized mutations from the tool-invocation audit, policy denials,
+  approval gates, steps, tool calls, tokens, cost, p95 latency.
+* `judge.py` adds an LLM-as-judge over the run transcript with a rubric (rationale faithfulness,
+  email quality) and a deterministic fallback so CI produces numbers without a key.
+* `redteam.py` probes the gateway with actions a correct system must refuse: unapproved and
+  over-balance credit memos, a forged approval reference, threatening email, prompt injection inside
+  customer text, mail to an inactive contact, a plan for a customer on credit hold, and a mutation
+  inside a shadow run. Each probe checks the ERP balance before and after, so "refused" means
+  refused.
+* `scripts/eval.py` is the CI entry point (`build`, `run`, `redteam`, `gate`, `compare`).
+
 ## Deviations from the plan (so far)
 
 * ERP adapter is a library (`libs/recoup-erp-adapter`) rather than a network service; a real
@@ -157,6 +181,8 @@ console invalidates TanStack queries on `case.*`, `agent.*`, `comm.*`, `tool.*` 
   phase 4 behind the same `classify_tone` tool (the *decision* stays in the policy engine).
 * PII redaction is regex-based (phones, SSN/card-like numbers); Presidio can replace `redact_text`.
 * Cedar was not used; the JSON rule grammar in `recoup_policy.engine` is small enough to own.
-* Langfuse is not wired yet (phase 6); traces and per-step token/cost accounting are in Postgres and OTel.
+* Langfuse is not run as a container: every model call emits an OpenTelemetry GenAI span with tokens
+  and cost, so pointing `OTEL_EXPORTER_OTLP_ENDPOINT` at Langfuse (or keeping Tempo) is a config
+  choice rather than another stateful service in the compose file.
 * LangGraph checkpoints use the in-memory saver inside an activity; Temporal provides durability
   across steps. The Postgres saver is a config switch (`LANGGRAPH_CHECKPOINT_URL`) for later.

@@ -123,6 +123,7 @@ class ToolLoopAgent:
         run_id: uuid.UUID,
         max_iterations: int = 12,
         max_repairs: int = 2,
+        mode: str = "LIVE",
         checkpointer: Any | None = None,
     ) -> None:
         self.spec = spec
@@ -130,6 +131,7 @@ class ToolLoopAgent:
         self.gateway = gateway
         self.tenant_id, self.case_id, self.run_id = tenant_id, case_id, run_id
         self.max_iterations, self.max_repairs = max_iterations, max_repairs
+        self.mode = mode
         self.actor = f"agent:{spec.name}"
         self._tools: list[ToolSchema] = []
         self._graph = self._build(checkpointer or MemorySaver())
@@ -205,6 +207,7 @@ class ToolLoopAgent:
                     actor=self.actor,
                     args=call.args,
                     idempotency_key=idem,
+                    mode=self.mode,
                 )
             except Exception as e:
                 env = {"status": "ERROR", "message": str(e)[:500]}

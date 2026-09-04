@@ -17,6 +17,7 @@ x-service-env: &service-env
   TOOL_GATEWAY_URL: http://tool-gateway:8000
   ORCHESTRATOR_URL: http://orchestrator:8000
   KNOWLEDGE_URL: http://knowledge:8000
+  EVALS_URL: http://evals:8000
   EMBED_DIM: ${EMBED_DIM:-768}
   TEMPORAL_ADDRESS: temporal:7233
 
@@ -271,6 +272,24 @@ services:
       timeout: 3s
       retries: 30
 
+  evals:
+    build: { context: ., dockerfile: services/evals/Dockerfile }
+    environment:
+      <<: *service-env
+      LLM_PROVIDER: ${LLM_PROVIDER:-heuristic}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL_FAST: ${LLM_MODEL_FAST:-gemini-2.5-flash}
+      LLM_MODEL_STRONG: ${LLM_MODEL_STRONG:-gemini-2.5-pro}
+      RUN_CONCURRENCY: ${EVAL_CONCURRENCY:-4}
+      DEFAULT_TENANT_SLUG: ${DEFAULT_TENANT_SLUG:-acme}
+    ports: ["8010:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      case: { condition: service_started }
+      orchestrator: { condition: service_started }
+      tool-gateway: { condition: service_started }
+      mock-erp: { condition: service_healthy }
+
   realtime:
     build: { context: ., dockerfile: services/realtime/Dockerfile }
     environment: *service-env
@@ -284,7 +303,7 @@ services:
       <<: *service-env
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000
     ports: ["8000:8000"]
-    depends_on: [iam, case, mock-erp, policy, communication, tool-gateway, orchestrator, knowledge]
+    depends_on: [iam, case, mock-erp, policy, communication, tool-gateway, orchestrator, knowledge, evals]
 
   frontend:
     build: { context: ./frontend }

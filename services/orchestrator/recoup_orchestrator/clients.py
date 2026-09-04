@@ -52,6 +52,7 @@ class ToolGatewayClient:
         args: dict[str, Any],
         idempotency_key: str | None = None,
         approval_ref: str | None = None,
+        mode: str = "LIVE",
     ) -> dict[str, Any]:
         """Returns the gateway envelope. Policy/approval outcomes (4xx) come back as data, not
         exceptions, so the agent can reason about them."""
@@ -65,6 +66,7 @@ class ToolGatewayClient:
                 "args": args,
                 "idempotency_key": idempotency_key,
                 "approval_ref": approval_ref,
+                "mode": mode,
             },
         )
         if r.status_code in (403, 404, 409, 422, 429):

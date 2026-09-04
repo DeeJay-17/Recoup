@@ -28,15 +28,15 @@ jobs:
           uv run ruff format --check .
       - name: typecheck
         run: |
-          for p in libs/recoup-common libs/recoup-erp-adapter services/iam services/mock-erp services/case services/gateway services/policy services/communication services/tool-gateway services/orchestrator services/realtime services/knowledge libs/recoup-llm; do
+          for p in libs/recoup-common libs/recoup-erp-adapter services/iam services/mock-erp services/case services/gateway services/policy services/communication services/tool-gateway services/orchestrator services/realtime services/knowledge services/evals libs/recoup-llm; do
             (cd $p && uv run --project ../.. mypy .) || exit 1
           done
       - name: migrations apply cleanly
         run: |
-          for s in iam mock-erp case policy communication tool-gateway orchestrator knowledge; do (cd services/$s && uv run --project ../.. alembic upgrade head) || exit 1; done
+          for s in iam mock-erp case policy communication tool-gateway orchestrator knowledge evals; do (cd services/$s && uv run --project ../.. alembic upgrade head) || exit 1; done
       - name: tests (unit + integration)
         run: |
-          for p in libs/recoup-common libs/recoup-erp-adapter services/iam services/mock-erp services/case services/gateway services/policy services/communication services/tool-gateway services/orchestrator services/realtime services/knowledge libs/recoup-llm; do
+          for p in libs/recoup-common libs/recoup-erp-adapter services/iam services/mock-erp services/case services/gateway services/policy services/communication services/tool-gateway services/orchestrator services/realtime services/knowledge services/evals libs/recoup-llm; do
             (cd $p && uv run --project ../.. pytest -q --rootdir=. -p no:cacheprovider) || exit 1
           done
 
@@ -62,4 +62,33 @@ jobs:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - name: build images (no push yet)
-        run: docker compose build iam mock-erp case gateway policy communication tool-gateway orchestrator realtime knowledge frontend
+        run: docker compose build iam mock-erp case gateway policy communication tool-gateway orchestrator realtime knowledge evals frontend
+
+  eval-gate:
+    runs-on: ubuntu-latest
+    needs: [python]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with: { enable-cache: true }
+      - run: uv sync --all-packages
+      - name: start the stack (deterministic agents, no provider key needed)
+        env:
+          LLM_PROVIDER: heuristic
+        run: |
+          cp .env.example .env
+          sed -i 's/^LLM_PROVIDER=.*/LLM_PROVIDER=heuristic/' .env
+          docker compose up -d --build postgres redpanda temporal redis mailpit \
+            iam mock-erp case policy communication tool-gateway orchestrator knowledge evals
+          for i in $(seq 1 60); do
+            curl -sf localhost:8010/healthz && curl -sf localhost:8007/healthz && break
+            sleep 5
+          done
+      - name: seed a small dataset and ingest
+        run: |
+          ERP_INVOICES=120 ERP_CUSTOMERS=25 uv run python scripts/seed.py --invoices 120 --customers 25
+      - name: eval gate (golden smoke suite + red-team probes)
+        run: uv run python scripts/eval.py gate --size 12
+      - name: service logs on failure
+        if: failure()
+        run: docker compose logs --tail 200 orchestrator tool-gateway evals

@@ -15,6 +15,7 @@ members = [
     "recoup-common",
     "recoup-communication",
     "recoup-erp-adapter",
+    "recoup-evals",
     "recoup-gateway",
     "recoup-iam",
     "recoup-knowledge",
@@ -2436,6 +2437,7 @@ dev = [
     { name = "recoup-common" },
     { name = "recoup-communication" },
     { name = "recoup-erp-adapter" },
+    { name = "recoup-evals" },
     { name = "recoup-gateway" },
     { name = "recoup-iam" },
     { name = "recoup-knowledge" },
@@ -2462,6 +2464,7 @@ dev = [
     { name = "recoup-common", editable = "libs/recoup-common" },
     { name = "recoup-communication", editable = "services/communication" },
     { name = "recoup-erp-adapter", editable = "libs/recoup-erp-adapter" },
+    { name = "recoup-evals", editable = "services/evals" },
     { name = "recoup-gateway", editable = "services/gateway" },
     { name = "recoup-iam", editable = "services/iam" },
     { name = "recoup-knowledge", editable = "services/knowledge" },
@@ -2573,6 +2576,25 @@ requires-dist = [
 ]
 
 [[package]]
+name = "recoup-evals"
+version = "0.1.0"
+source = { editable = "services/evals" }
+dependencies = [
+    { name = "recoup-common" },
+    { name = "recoup-erp-adapter" },
+    { name = "recoup-llm" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "recoup-common", editable = "libs/recoup-common" },
+    { name = "recoup-erp-adapter", editable = "libs/recoup-erp-adapter" },
+    { name = "recoup-llm", editable = "libs/recoup-llm" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
+]
+
+[[package]]
 name = "recoup-gateway"
 version = "0.1.0"
 source = { editable = "services/gateway" }
@@ -2641,6 +2663,7 @@ dependencies = [
     { name = "langchain-core" },
     { name = "langchain-google-genai" },
     { name = "langchain-openai" },
+    { name = "opentelemetry-api" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
 ]
@@ -2652,6 +2675,7 @@ requires-dist = [
     { name = "langchain-core", specifier = ">=0.3" },
     { name = "langchain-google-genai", specifier = ">=2.0" },
     { name = "langchain-openai", specifier = ">=0.3" },
+    { name = "opentelemetry-api", specifier = ">=1.25" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.3" },
 ]

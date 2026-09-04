@@ -7,9 +7,12 @@ from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from opentelemetry import trace
 
 from recoup_llm.config import LLMSettings
 from recoup_llm.types import AssistantTurn, Message, ToolCall, ToolSchema, Usage
+
+tracer = trace.get_tracer("recoup.llm")
 
 
 class LLMError(Exception):
@@ -116,14 +119,26 @@ class LangChainLLM:
         temperature: float | None = None,
     ) -> AssistantTurn:
         runnable = self._with_tools(tools)
-        try:
-            ai = await asyncio.wait_for(
-                runnable.ainvoke(_to_lc(messages)), timeout=self.settings.timeout_seconds + 5
-            )
-        except Exception as e:
-            raise LLMError(f"{self.provider}/{self.model}: {type(e).__name__}: {e}") from e
-        if not isinstance(ai, AIMessage):
-            raise LLMError(f"unexpected response type {type(ai).__name__}")
+        # One span per model call: OTLP carries these to Tempo (or Langfuse) under the same trace
+        # id as the HTTP request, workflow activity and tool calls around them.
+        with tracer.start_as_current_span(f"chat {self.model}") as span:
+            span.set_attribute("gen_ai.system", self.provider)
+            span.set_attribute("gen_ai.operation.name", "chat")
+            span.set_attribute("gen_ai.request.model", self.model)
+            span.set_attribute("recoup.agent.task", task or "unknown")
+            span.set_attribute("recoup.llm.messages", len(messages))
+            span.set_attribute("recoup.llm.tools", len(tools or []))
+            try:
+                ai = await asyncio.wait_for(
+                    runnable.ainvoke(_to_lc(messages)), timeout=self.settings.timeout_seconds + 5
+                )
+            except Exception as e:
+                span.set_attribute("error.type", type(e).__name__)
+                span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)[:200]))
+                raise LLMError(f"{self.provider}/{self.model}: {type(e).__name__}: {e}") from e
+            if not isinstance(ai, AIMessage):
+                raise LLMError(f"unexpected response type {type(ai).__name__}")
+            _annotate(span, ai, self.settings, self.model)
         usage = Usage()
         meta = getattr(ai, "usage_metadata", None) or {}
         if meta:
@@ -145,6 +160,19 @@ class LangChainLLM:
         return AssistantTurn(
             content=content, tool_calls=calls, usage=usage, model=self.model, provider=self.provider
         )
+
+
+def _annotate(span: Any, ai: AIMessage, settings: LLMSettings, model: str) -> None:
+    meta = getattr(ai, "usage_metadata", None) or {}
+    if meta:
+        tin, tout = int(meta.get("input_tokens", 0)), int(meta.get("output_tokens", 0))
+        pin, pout = settings.price_for(model)
+        span.set_attribute("gen_ai.usage.input_tokens", tin)
+        span.set_attribute("gen_ai.usage.output_tokens", tout)
+        span.set_attribute("recoup.llm.cost_usd", round(tin * pin / 1e6 + tout * pout / 1e6, 6))
+    span.set_attribute("recoup.llm.tool_calls", len(ai.tool_calls or []))
+    if ai.tool_calls:
+        span.set_attribute("recoup.llm.tool_names", [str(t.get("name")) for t in ai.tool_calls])
 
 
 def _flatten(parts: list[Any]) -> str:

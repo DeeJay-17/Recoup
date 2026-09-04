@@ -1,8 +1,8 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 COMPOSE ?= docker compose
-SERVICES := iam mock-erp case policy communication tool-gateway orchestrator knowledge
-PY_PKGS := libs/recoup-common libs/recoup-erp-adapter services/iam services/mock-erp services/case services/gateway services/policy services/communication services/tool-gateway services/orchestrator services/realtime services/knowledge libs/recoup-llm
+SERVICES := iam mock-erp case policy communication tool-gateway orchestrator knowledge evals
+PY_PKGS := libs/recoup-common libs/recoup-erp-adapter services/iam services/mock-erp services/case services/gateway services/policy services/communication services/tool-gateway services/orchestrator services/realtime services/knowledge services/evals libs/recoup-llm
 
 help: ## Show targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -21,6 +21,18 @@ infra-up: env ## Start only infrastructure containers (postgres, redpanda, tempo
 run-agents: ## Start an agent run for every NEW case (cases created before the orchestrator existed)
 	uv run python scripts/run_agents.py
 
+eval-build: ## Build the golden dataset from Mock ERP ground truth (SIZE=100 NAME=golden_v1)
+	uv run python scripts/eval.py build --name $${NAME:-golden_v1} --size $${SIZE:-100}
+
+eval: ## Run the golden suite in shadow mode and print the scorecard (JUDGE=1 to add the LLM judge)
+	uv run python scripts/eval.py run --name $${NAME:-golden_v1} $${JUDGE:+--judge} --limit $${LIMIT:-0}
+
+eval-redteam: ## Run the adversarial probe suite (must report zero unauthorized mutations)
+	uv run python scripts/eval.py redteam
+
+eval-gate: ## Run the smoke suite and fail if metrics fall below the gates (used by CI)
+	uv run python scripts/eval.py gate --size $${SIZE:-20}
+
 up: env ## Start the full stack
 	$(COMPOSE) up -d --build
 
@@ -28,7 +40,7 @@ down: ## Stop the stack
 	$(COMPOSE) down
 
 logs: ## Tail service logs
-	$(COMPOSE) logs -f iam mock-erp case gateway policy communication tool-gateway orchestrator realtime knowledge
+	$(COMPOSE) logs -f iam mock-erp case gateway policy communication tool-gateway orchestrator realtime knowledge evals
 
 # ---------- database ----------
 migrate: ## Run alembic migrations for every service (uses DATABASE_URL from .env)
@@ -68,6 +80,8 @@ dev-realtime: ## Run the realtime WebSocket service locally on :8008
 	cd services/realtime && uv run uvicorn recoup_realtime.main:app --reload --port 8008
 dev-knowledge: ## Run the Knowledge service locally on :8009
 	cd services/knowledge && uv run uvicorn recoup_knowledge.main:app --reload --port 8009
+dev-evals: ## Run the Eval service locally on :8010
+	cd services/evals && uv run uvicorn recoup_evals.main:app --reload --port 8010
 dev-gateway: ## Run API gateway locally on :8000
 	cd services/gateway && uv run uvicorn recoup_gateway.main:app --reload --port 8000
 dev-web: ## Run the React console on :5173
@@ -91,4 +105,4 @@ test: ## Unit tests (no DB required)
 test-all: ## All tests incl. integration (requires TEST_DATABASE_URL)
 	@for p in $(PY_PKGS); do echo ">> pytest $$p"; (cd $$p && uv run --project ../.. pytest -q --rootdir=. -p no:cacheprovider) || exit 1; done
 
-.PHONY: help install env infra-up up down logs migrate migrate-down seed simulate-reply demo run-agents ingest dev-iam dev-orchestrator dev-realtime dev-knowledge dev-erp dev-case dev-policy dev-comm dev-tools dev-gateway dev-web lint fmt test test-all
+.PHONY: help install env infra-up up down logs migrate migrate-down seed simulate-reply demo run-agents eval-build eval eval-redteam eval-gate ingest dev-iam dev-orchestrator dev-realtime dev-knowledge dev-evals dev-erp dev-case dev-policy dev-comm dev-tools dev-gateway dev-web lint fmt test test-all

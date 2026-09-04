@@ -1,14 +1,26 @@
 import { useState } from "react";
 import clsx from "clsx";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { useModelConfig, usePromptMutations, usePrompts, useRun, useRuns, useSaveModelConfig } from "@/api/hooks";
+import {
+  useEvalDatasets,
+  useEvalMutations,
+  useEvalRun,
+  useEvalRuns,
+  useModelConfig,
+  usePromptMutations,
+  usePrompts,
+  useRun,
+  useRuns,
+  useSaveModelConfig,
+} from "@/api/hooks";
+import { EvalScorecard } from "@/components/EvalScorecard";
 import { hasRole, useAuth } from "@/store/auth";
 import { Button, Card, Empty, ErrorBox } from "@/components/ui";
 import { StepList } from "@/components/AgentRunCard";
 import { runTone } from "@/lib/runTone";
 import { relTime, shortId } from "@/lib/format";
 
-type Tab = "runs" | "prompts" | "models";
+type Tab = "runs" | "prompts" | "models" | "evals";
 
 export function AgentsPage() {
   const search = useSearch({ from: "/app/agents" });
@@ -19,7 +31,7 @@ export function AgentsPage() {
       <div className="flex items-center gap-2">
         <h1 className="text-lg font-semibold">Agents</h1>
         <div className="ml-auto flex gap-1">
-          {(["runs", "prompts", "models"] as Tab[]).map((t) => (
+          {(["runs", "prompts", "models", "evals"] as Tab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)} className={clsx("rounded px-2.5 py-1 text-sm capitalize", tab === t ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100")}>{t}</button>
           ))}
         </div>
@@ -27,6 +39,7 @@ export function AgentsPage() {
       {tab === "runs" && <RunsTab selected={search.run ?? null} onSelect={(id) => void navigate({ to: "/agents", search: { run: id ?? undefined } })} />}
       {tab === "prompts" && <PromptsTab />}
       {tab === "models" && <ModelsTab />}
+      {tab === "evals" && <EvalsTab />}
     </div>
   );
 }
@@ -166,6 +179,100 @@ function ModelsTab() {
           {save.isSuccess && <span className="text-sm text-emerald-700">Saved. New runs use the updated models.</span>}
         </div>
       )}
+    </div>
+  );
+}
+
+function EvalsTab() {
+  const datasets = useEvalDatasets();
+  const runs = useEvalRuns();
+  const m = useEvalMutations();
+  const me = useAuth((s) => s.me);
+  const canRun = hasRole(me, "manager");
+  const [selected, setSelected] = useState<string | null>(null);
+  const detail = useEvalRun(selected);
+  const [name, setName] = useState("golden_v1");
+  const [size, setSize] = useState(50);
+  const [judge, setJudge] = useState(false);
+  const [limit, setLimit] = useState(0);
+  const [datasetId, setDatasetId] = useState<string>("");
+
+  return (
+    <div className="space-y-4">
+      <Card title="Suites">
+        <p className="text-xs text-slate-500">
+          Runs replay real cases through the agents with side effects disabled, and score the outcome against the Mock ERP ground truth.
+        </p>
+        {canRun && (
+          <div className="mt-3 flex flex-wrap items-end gap-2 text-sm">
+            <label className="text-xs text-slate-600">Dataset name
+              <input className="mt-0.5 block w-40 rounded border border-slate-300 px-2 py-1 text-sm" value={name} onChange={(e) => setName(e.target.value)} />
+            </label>
+            <label className="text-xs text-slate-600">Cases
+              <input type="number" className="mt-0.5 block w-20 rounded border border-slate-300 px-2 py-1 text-sm" value={size} onChange={(e) => setSize(Number(e.target.value))} />
+            </label>
+            <Button variant="secondary" onClick={() => m.build.mutate({ name, size, kind: "golden" })} disabled={m.build.isPending}>Build golden set</Button>
+            <Button variant="secondary" onClick={() => m.build.mutate({ name: "redteam_v1", size: 1, kind: "redteam" })} disabled={m.build.isPending}>Build red-team set</Button>
+          </div>
+        )}
+        <ul className="mt-3 divide-y divide-slate-100 text-sm">
+          {datasets.data?.map((d) => (
+            <li key={d.id} className="flex items-center gap-2 py-2">
+              <span className={clsx("rounded px-1.5 py-0.5 text-xs", d.kind === "redteam" ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-700")}>{d.kind}</span>
+              <span className="font-medium">{d.name}</span>
+              <span className="text-xs text-slate-500">{d.case_count} cases · {relTime(d.created_at)}</span>
+              {canRun && (
+                <span className="ml-auto flex items-center gap-2">
+                  <label className="flex items-center gap-1 text-xs text-slate-600">
+                    <input type="checkbox" checked={judge && datasetId === d.id} onChange={(e) => { setDatasetId(d.id); setJudge(e.target.checked); }} /> judge
+                  </label>
+                  <input type="number" className="w-16 rounded border border-slate-300 px-1 py-0.5 text-xs" placeholder="all" value={datasetId === d.id && limit ? limit : ""} onChange={(e) => { setDatasetId(d.id); setLimit(Number(e.target.value)); }} />
+                  <Button onClick={() => m.start.mutate({ dataset_id: d.id, label: `${d.name} @ ${new Date().toISOString().slice(11, 16)}`, judge: judge && datasetId === d.id, limit: datasetId === d.id && limit ? limit : undefined })} disabled={m.start.isPending}>
+                    Run
+                  </Button>
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+        {datasets.data?.length === 0 && <Empty>No datasets yet. Build one from the seeded Mock ERP data.</Empty>}
+        {(m.build.error || m.start.error) && <div className="mt-2"><ErrorBox error={m.build.error ?? m.start.error} /></div>}
+      </Card>
+
+      <div className="grid gap-4 lg:grid-cols-5">
+        <div className="lg:col-span-2">
+          <Card title="Eval runs">
+            <ul className="divide-y divide-slate-100">
+              {runs.data?.map((r) => (
+                <li key={r.id}>
+                  <button className={clsx("flex w-full items-center gap-2 py-2 text-left", selected === r.id && "bg-slate-50")} onClick={() => setSelected(r.id)}>
+                    <span className={clsx("rounded px-1.5 py-0.5 text-xs font-medium", r.status === "COMPLETED" ? "bg-emerald-100 text-emerald-800" : r.status === "RUNNING" ? "bg-indigo-100 text-indigo-800" : "bg-rose-100 text-rose-800")}>{r.status}</span>
+                    <span className="text-sm">{r.label}</span>
+                    <span className="ml-auto text-xs text-slate-400">
+                      {r.cases_done}/{r.cases_total}
+                      {typeof r.metrics.root_cause_accuracy === "number" ? ` · ${Math.round((r.metrics.root_cause_accuracy as number) * 100)}%` : ""} · {relTime(r.started_at)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {runs.data?.length === 0 && <Empty>No eval runs yet.</Empty>}
+          </Card>
+        </div>
+        <div className="lg:col-span-3">
+          {!selected && <Empty>Select a run to see its scorecard.</Empty>}
+          {detail.error && <ErrorBox error={detail.error} />}
+          {detail.data && (
+            <Card
+              title={<span>{detail.data.run.label} <span className="font-normal text-slate-400">· {detail.data.dataset.name}</span></span>}
+              right={<span className="text-xs text-slate-500">{Object.entries(detail.data.run.models).map(([t, v]) => { const mm = v as { provider: string; model: string }; return `${t}: ${mm.model}`; }).join(" · ")}</span>}
+            >
+              {detail.data.run.error && <ErrorBox error={detail.data.run.error} />}
+              <EvalScorecard detail={detail.data} />
+            </Card>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

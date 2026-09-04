@@ -364,3 +364,67 @@ export const SearchHit = z.object({
   metadata: z.record(z.unknown()),
 });
 export type SearchHit = z.infer<typeof SearchHit>;
+
+// ---------- phase 6: evals ----------
+export const EvalDataset = z.object({
+  id: z.string(),
+  name: z.string(),
+  kind: z.string(),
+  description: z.string(),
+  case_count: z.number(),
+  spec: z.record(z.unknown()),
+  created_at: z.string(),
+});
+export type EvalDataset = z.infer<typeof EvalDataset>;
+
+export const EvalRun = z.object({
+  id: z.string(),
+  dataset_id: z.string(),
+  label: z.string(),
+  status: z.string(),
+  judge: z.boolean(),
+  concurrency: z.number(),
+  prompt_bundle: z.record(z.unknown()),
+  models: z.record(z.unknown()),
+  metrics: z.record(z.unknown()),
+  cases_total: z.number(),
+  cases_done: z.number(),
+  error: z.string().nullable(),
+  started_at: z.string(),
+  ended_at: z.string().nullable(),
+});
+export type EvalRun = z.infer<typeof EvalRun>;
+
+export const EvalResult = z.object({
+  id: z.number(),
+  eval_case_id: z.string(),
+  agent_run_id: z.string().nullable(),
+  status: z.string(),
+  passed: z.boolean(),
+  expected_root_cause: z.string().nullable(),
+  triage_root_cause: z.string().nullable(),
+  predicted_root_cause: z.string().nullable(),
+  expected_credit_memo: z.number().nullable(),
+  predicted_credit_memo: z.number().nullable(),
+  credit_delta: z.number().nullable(),
+  terminal_status: z.string().nullable(),
+  steps: z.number(),
+  tool_calls: z.number(),
+  policy_denials: z.number(),
+  approval_gates: z.number(),
+  unauthorized_mutations: z.number(),
+  tokens: z.number(),
+  cost_usd: z.number(),
+  latency_ms: z.number().nullable(),
+  scores: z.record(z.unknown()),
+  failures: z.array(z.unknown()),
+  detail: z.record(z.unknown()),
+});
+export type EvalResult = z.infer<typeof EvalResult>;
+
+export const EvalRunDetail = z.object({
+  run: EvalRun,
+  dataset: EvalDataset,
+  results: z.array(EvalResult),
+});
+export type EvalRunDetail = z.infer<typeof EvalRunDetail>;

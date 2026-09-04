@@ -392,6 +392,46 @@ async def put_model_config(
 
 
 # ---------- internal ----------
+@internal.get("/runs/{run_id}", response_model=RunDetail)
+async def internal_run(
+    run_id: uuid.UUID, tenant_id: uuid.UUID, session: SessionDep, with_messages: bool = False
+) -> RunDetail:
+    run = await session.get(AgentRun, run_id)
+    if not run or run.tenant_id != tenant_id:
+        raise NotFoundError("run not found")
+    steps = await session.scalars(
+        select(AgentStep)
+        .where(AgentStep.run_id == run_id)
+        .order_by(AgentStep.step_no, AgentStep.id)
+    )
+    return RunDetail(
+        run=RunOut.from_row(run),
+        steps=[StepOut.from_row(s, with_messages=with_messages) for s in steps.all()],
+    )
+
+
+@internal.post("/runs/{run_id}/cancel")
+async def internal_cancel(
+    run_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    session: SessionDep,
+    request: Request,
+    reason: str = "cancelled by eval harness",
+) -> dict[str, Any]:
+    run = await session.get(AgentRun, run_id)
+    if not run or run.tenant_id != tenant_id:
+        raise NotFoundError("run not found")
+    runs: RunManager = request.app.state.runs
+    if run.mode == "LIVE":
+        return {"delivered": await runs.cancel(run.case_id, reason)}
+    handle = runs.client.get_workflow_handle(run.workflow_id)
+    try:
+        await handle.signal("cancel_run", {"reason": reason})
+        return {"delivered": True}
+    except Exception:
+        return {"delivered": False}
+
+
 @internal.post("/runs", status_code=201)
 async def internal_start(
     body: StartRunBody, tenant_id: uuid.UUID, request: Request
