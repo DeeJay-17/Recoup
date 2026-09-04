@@ -8,6 +8,7 @@ class Settings(BaseServiceSettings):
     db_schema: str = "agents"
     case_url: str = "http://localhost:8003"
     tool_gateway_url: str = "http://localhost:8006"
+    knowledge_url: str = "http://localhost:8009"
     temporal_address: str = "localhost:7233"
     temporal_namespace: str = "default"
     temporal_task_queue: str = "recoup-cases"

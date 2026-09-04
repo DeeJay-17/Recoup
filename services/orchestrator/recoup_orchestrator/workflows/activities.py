@@ -35,7 +35,7 @@ from recoup_orchestrator.agents.schemas import (
     TriageOutput,
 )
 from recoup_orchestrator.agents.specs import SPECIALISTS, SUPERVISOR
-from recoup_orchestrator.clients import CaseClient, ToolGatewayClient
+from recoup_orchestrator.clients import CaseClient, KnowledgeClient, ToolGatewayClient
 from recoup_orchestrator.models import AgentRun, AgentStep, ModelConfig, Outbox
 from recoup_orchestrator.prompt_store import active_bundle
 from recoup_orchestrator.settings import Settings
@@ -99,12 +99,14 @@ class Deps:
         router_factory: Any,
         gateway: ToolGatewayClient,
         cases: CaseClient,
+        knowledge: KnowledgeClient,
     ) -> None:
         self.settings = settings
         self.db = db
         self.router_factory = router_factory  # (overrides) -> ModelRouter
         self.gateway = gateway
         self.cases = cases
+        self.knowledge = knowledge
 
 
 class CaseActivities:
@@ -800,6 +802,11 @@ class CaseActivities:
             except Exception as e:
                 log.warning("orchestrator.resolve_failed", error=str(e))
                 status, reason = "ESCALATED", f"could not resolve: {e}"
+        # MemoryWriter: index the outcome and distil durable customer facts (best effort).
+        try:
+            await self.d.knowledge.extract_memory(state.tenant_id, state.case_id)
+        except Exception as e:
+            log.warning("orchestrator.memory_writer_failed", error=str(e)[:200])
         outcome = CaseOutcome(
             run_id=state.run_id,
             case_id=state.case_id,

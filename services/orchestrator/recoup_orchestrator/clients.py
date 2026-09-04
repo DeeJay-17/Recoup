@@ -140,3 +140,18 @@ class CaseClient:
             f"/internal/cases/{case_id}/events", params={"tenant_id": str(tenant_id)}, json=body
         )
         _raise(r, "case")
+
+
+class KnowledgeClient:
+    def __init__(self, base_url: str) -> None:
+        self.c = httpx.AsyncClient(base_url=base_url.rstrip("/"), timeout=120)
+
+    async def aclose(self) -> None:
+        await self.c.aclose()
+
+    async def extract_memory(self, tenant_id: uuid.UUID, case_id: uuid.UUID) -> dict[str, Any]:
+        r = await self.c.post(
+            "/internal/memory/extract", json={"tenant_id": str(tenant_id), "case_id": str(case_id)}
+        )
+        _raise(r, "knowledge")
+        return dict(r.json())

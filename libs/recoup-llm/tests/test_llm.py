@@ -74,3 +74,28 @@ def test_dereference_schema_inlines_refs_and_nullables() -> None:
     assert d["properties"]["inner"]["properties"]["x"]["type"] == "integer"
     assert d["properties"]["items"]["items"]["properties"]["x"]["type"] == "integer"
     assert d["properties"]["maybe"] == {"type": "string", "nullable": True, "default": None}
+
+
+async def test_hash_embedder_is_deterministic_and_normalised() -> None:
+    from recoup_llm import EmbedSettings, build_embedder
+
+    e = build_embedder(EmbedSettings(provider="hash", dim=64, _env_file=None))  # type: ignore[call-arg]
+    a, b = await e.embed(
+        ["freight charges disputed on invoice", "freight charges disputed on invoice"]
+    )
+    assert a == b and len(a) == 64
+    assert abs(sum(x * x for x in a) - 1.0) < 1e-6
+    q = await e.embed_query("disputed freight charge")
+    other = await e.embed_query("payment plan accepted")
+
+    def dot(u: list[float], v: list[float]) -> float:
+        return sum(x * y for x, y in zip(u, v, strict=True))
+
+    assert dot(q, a) > dot(other, a)
+
+
+def test_embedder_defaults_follow_llm_provider() -> None:
+    from recoup_llm import EmbedSettings, build_embedder
+
+    e = build_embedder(EmbedSettings(_env_file=None), llm_provider="heuristic")  # type: ignore[call-arg]
+    assert e.provider == "hash"

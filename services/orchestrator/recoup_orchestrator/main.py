@@ -15,7 +15,7 @@ from recoup_llm import LLMSettings, ModelRouter, build_router
 
 from recoup_orchestrator import prompt_store
 from recoup_orchestrator.agents import heuristics  # noqa: F401  (registers heuristic policies)
-from recoup_orchestrator.clients import CaseClient, ToolGatewayClient
+from recoup_orchestrator.clients import CaseClient, KnowledgeClient, ToolGatewayClient
 from recoup_orchestrator.consumer import EventBridge
 from recoup_orchestrator.models import Outbox
 from recoup_orchestrator.routes import internal, router
@@ -43,9 +43,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if n:
             log.info("prompts.seeded", count=n)
     gateway, cases = ToolGatewayClient(settings.tool_gateway_url), CaseClient(settings.case_url)
+    knowledge = KnowledgeClient(settings.knowledge_url)
     client = await connect(settings)
     runs = RunManager(client, settings)
-    activities = CaseActivities(Deps(settings, db, router_factory, gateway, cases))
+    activities = CaseActivities(Deps(settings, db, router_factory, gateway, cases, knowledge))
     worker = WorkerRunner(client, settings, activities) if settings.worker_enabled else None
     consumer = None
     if settings.consumer_enabled and settings.kafka_bootstrap_servers:
@@ -78,6 +79,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await relay.stop()
         await gateway.aclose()
         await cases.aclose()
+        await knowledge.aclose()
         await publisher.stop()
         await db.dispose()
 

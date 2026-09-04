@@ -17,6 +17,7 @@ IAM = os.environ.get("IAM_URL", "http://localhost:8001")
 ERP = os.environ.get("MOCK_ERP_URL", "http://localhost:8002")
 CASE = os.environ.get("CASE_URL", "http://localhost:8003")
 POLICY = os.environ.get("POLICY_URL", "http://localhost:8004")
+KNOWLEDGE = os.environ.get("KNOWLEDGE_URL", "http://localhost:8009")
 
 TENANT = {"slug": "acme", "name": "Acme Industrial Supply"}
 USERS = [
@@ -92,6 +93,14 @@ def main() -> int:
         r = c.post(f"{POLICY}/internal/tenants/{tenant_id}/install-defaults")
         r.raise_for_status()
         print(f"policies: installed {r.json()['installed']} default rules")
+
+        # --- Knowledge: SOPs + contract summaries ---
+        r = c.post(f"{KNOWLEDGE}/internal/seed", params={"tenant_id": tenant_id})
+        if r.status_code == 200:
+            k = r.json()
+            print(f"knowledge: indexed {k['sops']} SOPs and {k['contracts']} contract summaries")
+        else:
+            print(f"knowledge seed skipped ({r.status_code})")
 
         # --- Ingest ---
         if not args.no_ingest:

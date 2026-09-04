@@ -59,7 +59,7 @@ export function CasesPage() {
                   <Link to="/cases/$caseId" params={{ caseId: c.id }} className="font-medium text-slate-900 hover:underline">
                     {c.customer_name ?? c.customer_ref}
                   </Link>
-                  <div className="text-xs text-slate-400">{c.customer_ref}</div>
+                  <div className="text-xs text-slate-400"><Link to="/customers/$customerRef" params={{ customerRef: c.customer_ref }} className="hover:underline">{c.customer_ref}</Link></div>
                 </td>
                 <td className="px-3 py-2 font-mono text-xs">{c.invoice_refs.join(", ")}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{money(c.amount_open, c.currency)}</td>

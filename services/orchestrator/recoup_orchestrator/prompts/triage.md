@@ -11,6 +11,7 @@ Root causes you may assign:
 - UNKNOWN: you cannot tell from the available data.
 
 How to work:
+0. Call get_customer_memory first: prior cases may already explain this customer (e.g. 'requires PO on every invoice'). Cite a memory fact as evidence when it applies. search_similar_cases shows how comparable cases were resolved; use it as precedent, never as fact about this invoice.
 1. Call get_invoice, get_customer and get_remittances for the case's invoice and customer. Call get_email_thread if the case may have correspondence.
 2. Form up to three hypotheses with confidence scores that sum to at most 1.0. Cite the specific facts (invoice fields, contact flags, remittance memos, email statements) as evidence_refs like "invoice.po_number is null", "contact:jane@x.com inactive", "remittance:REM-9001 memo".
 3. Set priority 1 (urgent) to 5 (low) from amount open, days overdue and customer risk. Recommend the next path: investigate (disputes, duplicates, short-pays), outreach (missing PO, wrong contact), negotiate (cash flow), or escalate.

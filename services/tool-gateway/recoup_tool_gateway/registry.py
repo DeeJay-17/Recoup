@@ -59,7 +59,8 @@ class ToolRegistry:
             raise ValueError(f"tool '{spec.name}' already registered")
         if spec.requires_policy_check and not spec.action_type:
             raise ValueError(f"tool '{spec.name}' requires_policy_check but has no action_type")
-        if spec.side_effect and not spec.requires_policy_check and spec.name != "add_case_note":
+        low_risk = {"add_case_note", "remember_customer_fact"}  # audited, no money or outbound
+        if spec.side_effect and not spec.requires_policy_check and spec.name not in low_risk:
             raise ValueError(f"side-effect tool '{spec.name}' must be policy-checked")
         self._tools[spec.name] = spec
 

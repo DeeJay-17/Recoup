@@ -71,3 +71,14 @@
 21. Reject a proposal with a feedback code: the run escalates with the rejection in the brief.
 22. Stop `make demo`: after the wait timer (72h by default; set `CUSTOMER_WAIT_HOURS_DEFAULT`
     lower for demos) the Communicator sends reminders, then escalates after three.
+
+## Phase 5: memory and retrieval
+
+23. `make seed` now indexes the SOPs and a contract summary per customer. Open a customer from any
+    case (**Customer 360**): contacts, documents, case history, and *Memory*.
+24. Ask the knowledge base a question ("is freight billable for this customer?"): hits show whether
+    the vector or the full-text side (or both) found them.
+25. After a case resolves, the MemoryWriter adds facts such as "requires a PO on every invoice" with
+    provenance to the source case; retire or add facts by hand.
+26. On the next case for that customer, Triage calls `get_customer_memory` first and cites the fact in
+    its evidence; the Investigator cites contract passages and similar resolved cases.

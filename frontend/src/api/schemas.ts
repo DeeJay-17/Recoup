@@ -323,3 +323,44 @@ export const ModelConfig = z.object({
   effective: z.record(z.object({ provider: z.string(), model: z.string() })),
 });
 export type ModelConfig = z.infer<typeof ModelConfig>;
+
+// ---------- phase 5: knowledge & memory ----------
+export const MemoryFact = z.object({
+  id: z.string(),
+  customer_ref: z.string(),
+  fact: z.string(),
+  category: z.enum(["CONTACT", "PREFERENCE", "PATTERN", "RISK"]),
+  confidence: z.number(),
+  source_case_id: z.string().nullable(),
+  source_ref: z.string().nullable(),
+  created_by: z.string(),
+  created_at: z.string(),
+});
+export type MemoryFact = z.infer<typeof MemoryFact>;
+
+export const KnowledgeDoc = z.object({
+  id: z.string(),
+  kind: z.string(),
+  title: z.string(),
+  customer_ref: z.string().nullable(),
+  source_ref: z.string().nullable(),
+  chunk_count: z.number(),
+  metadata: z.record(z.unknown()),
+  created_at: z.string(),
+  preview: z.string(),
+});
+export type KnowledgeDoc = z.infer<typeof KnowledgeDoc>;
+
+export const SearchHit = z.object({
+  chunk_id: z.number(),
+  document_id: z.string(),
+  kind: z.string(),
+  title: z.string(),
+  customer_ref: z.string().nullable(),
+  chunk_no: z.number(),
+  content: z.string(),
+  score: z.number(),
+  sources: z.array(z.string()),
+  metadata: z.record(z.unknown()),
+});
+export type SearchHit = z.infer<typeof SearchHit>;

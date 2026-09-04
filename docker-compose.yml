@@ -16,6 +16,8 @@ x-service-env: &service-env
   COMM_URL: http://communication:8000
   TOOL_GATEWAY_URL: http://tool-gateway:8000
   ORCHESTRATOR_URL: http://orchestrator:8000
+  KNOWLEDGE_URL: http://knowledge:8000
+  EMBED_DIM: ${EMBED_DIM:-768}
   TEMPORAL_ADDRESS: temporal:7233
 
 services:
@@ -242,6 +244,32 @@ services:
       temporal: { condition: service_started }
       case: { condition: service_started }
       tool-gateway: { condition: service_started }
+      knowledge: { condition: service_started }
+
+  knowledge:
+    build: { context: ., dockerfile: services/knowledge/Dockerfile }
+    environment:
+      <<: *service-env
+      LLM_PROVIDER: ${LLM_PROVIDER:-heuristic}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL_FAST: ${LLM_MODEL_FAST:-gemini-2.5-flash}
+      LLM_MODEL_STRONG: ${LLM_MODEL_STRONG:-gemini-2.5-pro}
+      EMBED_PROVIDER: ${EMBED_PROVIDER:-}
+      EMBED_MODEL: ${EMBED_MODEL:-}
+      EMBED_API_KEY: ${EMBED_API_KEY:-}
+      DEFAULT_TENANT_SLUG: ${DEFAULT_TENANT_SLUG:-acme}
+    ports: ["8009:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redpanda: { condition: service_healthy }
+      case: { condition: service_started }
+      communication: { condition: service_healthy }
+      mock-erp: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/healthz')\""]
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
   realtime:
     build: { context: ., dockerfile: services/realtime/Dockerfile }
@@ -256,7 +284,7 @@ services:
       <<: *service-env
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000
     ports: ["8000:8000"]
-    depends_on: [iam, case, mock-erp, policy, communication, tool-gateway, orchestrator]
+    depends_on: [iam, case, mock-erp, policy, communication, tool-gateway, orchestrator, knowledge]
 
   frontend:
     build: { context: ./frontend }

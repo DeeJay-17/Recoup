@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { useCaseWorkspace, useCaseMutation } from "@/api/hooks";
 import { ActionCard } from "@/components/ActionCard";
 import { Timeline } from "@/components/Timeline";
@@ -28,7 +28,7 @@ export function CaseDetailPage() {
       <header className="flex flex-wrap items-center gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-lg font-semibold">{c.customer_name ?? c.customer_ref}</h1>
+            <h1 className="text-lg font-semibold"><Link to="/customers/$customerRef" params={{ customerRef: c.customer_ref }} className="hover:underline">{c.customer_name ?? c.customer_ref}</Link></h1>
             <StatusBadge status={c.status} />
             <PriorityDot p={c.priority} />
           </div>

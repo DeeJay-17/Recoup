@@ -122,6 +122,25 @@ a repair message (max 2) and then the step fails.
   the PO, confirms payment after a credit memo, accepts the plan, ...) so the closed loop runs
   unattended; the LLM persona arrives in phase 7 behind the same loop.
 
+## Knowledge service (phase 5)
+
+* `documents` → `chunks(embedding vector(EMBED_DIM), tsv)`; HNSW cosine index + GIN on the tsvector.
+  Ingestion is idempotent on `(tenant, kind, source_ref)`. Kinds: contract (summaries generated from
+  ERP terms at seed), sop (repo markdown), email (every sent/received message, via Kafka), resolution
+  (narrative of each finished case, via `case.resolved`).
+* `retrieval.hybrid_search`: top-k by `embedding <=> query` and top-k by `ts_rank_cd(websearch_to_tsquery)`,
+  fused with reciprocal rank fusion (k=60), one chunk per document while there is room. Customer-scoped
+  searches include tenant-wide documents.
+* Embeddings come from `recoup_llm.embeddings` (LangChain `init_embeddings`; Gemini
+  `gemini-embedding-001` at 768 dims by default; `hash` = deterministic bigram hashing for key-less runs).
+* Memory: `customer_memories(fact, category, confidence, source_case_id, source_ref, embedding, superseded_by)`.
+  The MemoryWriter runs when a run finalizes (and on `case.resolved`): it renders the case into a
+  narrative, asks the fast-tier model for at most six durable facts via a `submit_facts` tool, drops low
+  confidence ones, and supersedes near-duplicates (cosine > 0.93). Humans add or retire facts on the
+  Customer 360 page.
+* Agent tools: `get_customer_memory` (Triage first), `search_similar_cases` (precedent), `search_documents`
+  (contract clauses, SOPs, correspondence), `remember_customer_fact` (audited, low-risk side effect).
+
 ## Realtime
 
 Each replica consumes all topics with a unique consumer group and fans events out over

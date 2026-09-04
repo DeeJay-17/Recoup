@@ -10,6 +10,7 @@ class Settings(BaseServiceSettings):
     mock_erp_url: str = "http://localhost:8002"
     policy_url: str = "http://localhost:8004"
     comm_url: str = "http://localhost:8005"
+    knowledge_url: str = "http://localhost:8009"
     tool_timeout_seconds: float = 30.0
     rate_limit_per_minute: int = 600
     result_max_chars: int = 20000

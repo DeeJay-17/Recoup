@@ -34,6 +34,7 @@ dev = [
   "recoup-tool-gateway",
   "recoup-orchestrator",
   "recoup-realtime",
+  "recoup-knowledge",
 ]
 
 [tool.uv.sources.recoup-iam]
@@ -54,6 +55,8 @@ workspace = true
 workspace = true
 [tool.uv.sources.recoup-realtime]
 workspace = true
+[tool.uv.sources.recoup-knowledge]
+workspace = true
 
 [tool.ruff]
 line-length = 100
@@ -66,6 +69,7 @@ extend-exclude = ["alembic/versions"]
 "services/orchestrator/recoup_orchestrator/agents/*.py" = ["E501"]
 "services/orchestrator/tests/*.py" = ["E501"]
 "scripts/simulate_customer.py" = ["E501"]
+"services/knowledge/**/*.py" = ["E501"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC", "SIM", "RUF"]

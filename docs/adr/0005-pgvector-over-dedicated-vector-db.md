@@ -1,6 +1,6 @@
 # ADR-0005: pgvector + Postgres FTS instead of a dedicated vector database
 
-**Status:** accepted (phase 5) · **Date:** 2026-09-04
+**Status:** accepted (implemented in phase 5) · **Date:** 2026-09-04
 
 ## Context
 Retrieval corpus is modest (contracts, email threads, past resolutions per tenant) and must be

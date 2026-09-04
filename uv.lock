@@ -17,6 +17,7 @@ members = [
     "recoup-erp-adapter",
     "recoup-gateway",
     "recoup-iam",
+    "recoup-knowledge",
     "recoup-llm",
     "recoup-mock-erp",
     "recoup-orchestrator",
@@ -1940,6 +1941,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pgvector"
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a7/ec/6eb80aebc728200f95229219882994c1b0585b956ca47da5edb9d062627a/pgvector-0.5.0.tar.gz", hash = "sha256:07a9dcf735696879406983afc6eba9a787cef7c0cf6c367ca1a5779f036dee74", size = 35170, upload-time = "2026-07-06T18:27:27.767Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5c/e4/a5573f2c579ca9ad133293bfb624148ba0893674ca4a6eeec85ced9a6a09/pgvector-0.5.0-py3-none-any.whl", hash = "sha256:fedc9800894e6da2be51358d7b7c574bf34f247ca741a5a09513622135f5964f", size = 30958, upload-time = "2026-07-06T18:27:26.797Z" },
+]
+
+[[package]]
 name = "pillow"
 version = "12.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2355,6 +2365,15 @@ wheels = [
 ]
 
 [[package]]
+name = "python-multipart"
+version = "0.0.32"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5b/42/55c32bb9b12693c092ad250a0e82edb5b31ddeda6eb772de5f308b3804ad/python_multipart-0.0.32.tar.gz", hash = "sha256:be54b7f3fa167bb83e4fcd936b887b708f4e57fe75911c02aebf53efaf8d938e", size = 46881, upload-time = "2026-06-04T16:18:58.647Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e1/04/e8135ebd1ad02c56ec633277529b2602ff99ff634be76cdba5744cf554fd/python_multipart-0.0.32-py3-none-any.whl", hash = "sha256:ff6d3f776f16878c894e52e107296ffc890e913c611b1a4ec6c44e2821fe2e23", size = 30042, upload-time = "2026-06-04T16:18:57.319Z" },
+]
+
+[[package]]
 name = "pyyaml"
 version = "6.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -2419,6 +2438,7 @@ dev = [
     { name = "recoup-erp-adapter" },
     { name = "recoup-gateway" },
     { name = "recoup-iam" },
+    { name = "recoup-knowledge" },
     { name = "recoup-llm" },
     { name = "recoup-mock-erp" },
     { name = "recoup-orchestrator" },
@@ -2444,6 +2464,7 @@ dev = [
     { name = "recoup-erp-adapter", editable = "libs/recoup-erp-adapter" },
     { name = "recoup-gateway", editable = "services/gateway" },
     { name = "recoup-iam", editable = "services/iam" },
+    { name = "recoup-knowledge", editable = "services/knowledge" },
     { name = "recoup-llm", editable = "libs/recoup-llm" },
     { name = "recoup-mock-erp", editable = "services/mock-erp" },
     { name = "recoup-orchestrator", editable = "services/orchestrator" },
@@ -2582,6 +2603,31 @@ requires-dist = [
     { name = "email-validator", specifier = ">=2.1" },
     { name = "pwdlib", extras = ["argon2"], specifier = ">=0.2" },
     { name = "recoup-common", editable = "libs/recoup-common" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
+]
+
+[[package]]
+name = "recoup-knowledge"
+version = "0.1.0"
+source = { editable = "services/knowledge" }
+dependencies = [
+    { name = "pdfplumber" },
+    { name = "pgvector" },
+    { name = "python-multipart" },
+    { name = "recoup-common" },
+    { name = "recoup-erp-adapter" },
+    { name = "recoup-llm" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pdfplumber", specifier = ">=0.11" },
+    { name = "pgvector", specifier = ">=0.3" },
+    { name = "python-multipart", specifier = ">=0.0.9" },
+    { name = "recoup-common", editable = "libs/recoup-common" },
+    { name = "recoup-erp-adapter", editable = "libs/recoup-erp-adapter" },
+    { name = "recoup-llm", editable = "libs/recoup-llm" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
 

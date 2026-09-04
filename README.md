@@ -22,8 +22,9 @@ React 18 + TypeScript + TanStack + Tailwind.
 | 2 Tools & Policy | Policy Service (rule engine + simulator), Communication Service (Mailpit in/out, threading, templates), Tool Gateway (typed manifest, policy/approval gate, reconciliation, audit) | ✅ |
 | 3 First agents | Provider-agnostic LLM layer (Gemini default), Temporal `CaseWorkflow`, LangGraph Supervisor + Triage + Investigator, prompt versions, model routing, Realtime WebSocket stream, Agents console | ✅ |
 | 4 Resolution agents + HITL | Reconciler, Negotiator, Communicator, intent extractor; deterministic executor; approval and customer-wait paths with follow-up cadence; approval inbox with field editors, diff view, feedback codes, keyboard shortcuts; scripted customer persona | ✅ |
-| 5 Memory & RAG | Knowledge Service (hybrid retrieval + rerank), customer memory, Customer 360 page | ⏳ next |
-| 6–8 | evals, analytics, launch | planned |
+| 5 Memory & RAG | Knowledge Service: provider-agnostic embeddings (Gemini default, hashing fallback), pgvector HNSW + Postgres FTS with reciprocal rank fusion, SOP/contract/email/resolution indexing, per-customer memory with provenance written after every case, knowledge tools for agents, Customer 360 page | ✅ |
+| 6 Evals & observability | Eval Service, golden dataset, LLM-as-judge, CI eval gate, Langfuse, trace viewer | ⏳ next |
+| 7–8 | analytics, launch | planned |
 
 ## Choosing an LLM provider
 
@@ -89,7 +90,8 @@ services/communication   SMTP out via Mailpit, inbound polling, threading by Mes
 services/tool-gateway    the only path to side effects: typed manifest, policy + approval gate, idempotency, redaction, audit
 services/orchestrator    Temporal CaseWorkflow + worker, LangGraph tool-loop agents (supervisor, triage, investigator), prompts, model routing
 services/realtime        Kafka -> WebSocket fan-out for the live console
-libs/recoup-llm          provider-agnostic LLM client (LangChain init_chat_model), tiers, pricing, heuristic stand-in
+libs/recoup-llm          provider-agnostic LLM client (LangChain init_chat_model), tiers, pricing, heuristic stand-in, embeddings
+services/knowledge       hybrid retrieval (pgvector + FTS, RRF), document ingestion, customer memory writer, SOPs
 frontend                 React console: work queue, case workspace, approval inbox
 infra/                   postgres init, OTel collector, Tempo, Grafana provisioning
 scripts/seed.py          one-shot demo seed

@@ -294,3 +294,45 @@ export function useSaveModelConfig() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["modelconfig"] }),
   });
 }
+
+// ---------- phase 5: customer 360 ----------
+import { Customer, KnowledgeDoc, MemoryFact, SearchHit } from "./schemas";
+
+export function useCustomer(ref: string) {
+  return useQuery({ queryKey: ["customer", ref], queryFn: async () => Customer.parse(await api(`/erp/customers/${ref}`)) });
+}
+
+export function useCustomerCases(ref: string) {
+  return useQuery({
+    queryKey: ["cases", { customer_ref: ref }],
+    queryFn: async () => CasePage.parse(await api(`/cases/cases${qs({ customer_ref: ref, limit: 100 })}`)),
+  });
+}
+
+export function useCustomerMemory(ref: string) {
+  return useQuery({ queryKey: ["memory", ref], queryFn: async () => z.array(MemoryFact).parse(await api(`/knowledge/customers/${ref}/memory`)) });
+}
+
+export function useMemoryMutations(ref: string) {
+  const qc = useQueryClient();
+  const invalidate = () => void qc.invalidateQueries({ queryKey: ["memory", ref] });
+  return {
+    add: useMutation({
+      mutationFn: (body: { fact: string; category: string; confidence: number }) =>
+        api(`/knowledge/customers/${ref}/memory`, { method: "POST", body: JSON.stringify(body) }),
+      onSuccess: invalidate,
+    }),
+    retire: useMutation({ mutationFn: (id: string) => api(`/knowledge/customers/${ref}/memory/${id}`, { method: "DELETE" }), onSuccess: invalidate }),
+  };
+}
+
+export function useCustomerDocs(ref: string) {
+  return useQuery({ queryKey: ["docs", ref], queryFn: async () => z.array(KnowledgeDoc).parse(await api(`/knowledge/documents${qs({ customer_ref: ref, limit: 50 })}`)) });
+}
+
+export function useKnowledgeSearch() {
+  return useMutation({
+    mutationFn: async (body: { query: string; customer_ref?: string; kinds?: string[]; k?: number }) =>
+      z.array(SearchHit).parse(await api(`/knowledge/search`, { method: "POST", body: JSON.stringify({ k: 6, ...body }) })),
+  });
+}

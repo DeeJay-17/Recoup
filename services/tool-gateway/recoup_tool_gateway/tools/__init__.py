@@ -5,6 +5,7 @@ from recoup_tool_gateway.tools import (  # noqa: F401
     comm_tools,
     erp_read,
     erp_write,
+    knowledge_tools,
     policy_tools,
     reconcile,
 )
