@@ -1,6 +1,6 @@
 # ADR-0003: Deterministic policy engine outside the LLM loop
 
-**Status:** accepted · **Date:** 2026-09-04
+**Status:** accepted (implemented in phase 2) · **Date:** 2026-09-04
 
 ## Context
 Agents propose credit memos, discounts and outreach. Prompt injection via customer emails is a

@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Request
 from recoup_common.auth import Principal, Role, get_principal, require_role
 from recoup_common.db import Database
-from recoup_common.errors import ForbiddenError
+from recoup_common.errors import ForbiddenError, NotFoundError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from recoup_case import service
@@ -25,6 +25,7 @@ from recoup_case.schemas import (
     ProposedActionCreate,
     ProposedActionOut,
     TakeoverBody,
+    TimelineAppend,
     TimelineEventOut,
     TransitionBody,
     TriageUpdate,
@@ -41,7 +42,7 @@ async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
         yield session
 
 
-SessionDep = Annotated[AsyncSession, Depends(get_session)]
+SessionDep = Annotated[AsyncSession, Depends(get_session, scope="function")]
 Analyst = Annotated[Principal, Depends(require_role(Role.ANALYST))]
 Viewer = Annotated[Principal, Depends(get_principal)]
 
@@ -304,3 +305,69 @@ async def internal_transition(
         session, case, body.to, actor_type="agent", actor_id=actor_id, reason=body.reason
     )
     return CaseOut.model_validate(case)
+
+
+@internal.get("/cases/{case_id}", response_model=CaseOut)
+async def internal_get_case(
+    case_id: uuid.UUID, tenant_id: uuid.UUID, session: SessionDep
+) -> CaseOut:
+    return CaseOut.model_validate(await service.get_case(session, tenant_id, case_id))
+
+
+@internal.get("/cases/{case_id}/detail", response_model=CaseDetail)
+async def internal_case_detail(
+    case_id: uuid.UUID, tenant_id: uuid.UUID, session: SessionDep
+) -> CaseDetail:
+    case = await service.get_case(session, tenant_id, case_id)
+    return CaseDetail(
+        case=CaseOut.model_validate(case),
+        timeline=[
+            TimelineEventOut.model_validate(t) for t in await service.timeline(session, case)
+        ],
+        actions=[
+            ProposedActionOut.model_validate(a) for a in await service.actions_for(session, case)
+        ],
+    )
+
+
+@internal.get("/cases/by-invoice/{invoice_ref}", response_model=CaseOut)
+async def internal_case_by_invoice(
+    invoice_ref: str, tenant_id: uuid.UUID, session: SessionDep
+) -> CaseOut:
+    case = await service.find_case_for_invoice(session, tenant_id, invoice_ref)
+    if case is None:
+        raise NotFoundError(f"no case for invoice {invoice_ref}")
+    return CaseOut.model_validate(case)
+
+
+@internal.get("/cases/{case_id}/actions/{action_id}", response_model=ProposedActionOut)
+async def internal_get_action(
+    case_id: uuid.UUID, action_id: uuid.UUID, tenant_id: uuid.UUID, session: SessionDep
+) -> ProposedActionOut:
+    case = await service.get_case(session, tenant_id, case_id)
+    return ProposedActionOut.model_validate(await service.get_action(session, case, action_id))
+
+
+@internal.post("/cases/{case_id}/actions/{action_id}/executed", response_model=ProposedActionOut)
+async def internal_mark_executed(
+    case_id: uuid.UUID,
+    action_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    body: dict[str, Any],
+    session: SessionDep,
+    actor_id: str = "tool-gateway",
+) -> ProposedActionOut:
+    case = await service.get_case(session, tenant_id, case_id)
+    action = await service.get_action(session, case, action_id)
+    await service.mark_executed(session, case, action, body, actor_id=actor_id)
+    return ProposedActionOut.model_validate(action)
+
+
+@internal.post("/cases/{case_id}/events", response_model=TimelineEventOut, status_code=201)
+async def internal_append_event(
+    case_id: uuid.UUID, tenant_id: uuid.UUID, body: TimelineAppend, session: SessionDep
+) -> TimelineEventOut:
+    case = await service.get_case(session, tenant_id, case_id)
+    ev = await service.append_event(session, case, body)
+    await session.flush()
+    return TimelineEventOut.model_validate(ev)

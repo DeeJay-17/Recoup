@@ -47,9 +47,44 @@ freight billability, discount limits), POs, invoices, deliveries and remittances
 stores `scenario` and `ground_truth` (root cause, expected credit memo, expected final state,
 acceptable offers) that only `/admin/*` exposes — never the adapter surface the agents use.
 
+## Policy service
+
+`(action_type, context) -> ALLOW | REQUIRE_APPROVAL(role) | DENY(reason)`. Rules are JSON
+(`all` / `any` / `not` / `{fact, op, value}`) evaluated over a context the *gateway* builds:
+`case.*` and `customer.*` facts from the case service and ERP, `action.*` from the tool args,
+`evidence.*` / `email.*` computed deterministically (reconciled credit, PO match, tone score).
+Missing facts never satisfy a comparison. A DENY anywhere wins; otherwise the highest-priority
+matching rule decides; no match falls back to `REQUIRE_APPROVAL(analyst)`. Every evaluation is
+recorded and the simulator replays history against a candidate rule before it is saved as a
+new version.
+
+## Communication service
+
+Outbound: `POST /internal/emails/send` (idempotency_key required, approval_ref recorded) →
+SMTP → Mailpit. Inbound: a poller lists Mailpit messages addressed to the AR mailbox, threads by
+`In-Reply-To`/`References` against our stored Message-IDs, falls back to `INV-nnnnnn` numbers in
+subject/body/attachments → case lookup, else stores the message as `UNLINKED` for a human to
+link. PDF attachments are text-extracted (pdfplumber) so remittance advices become evidence.
+Sent/received emails are mirrored onto the case timeline.
+
+## Tool gateway
+
+`registry.py` holds `ToolSpec`s (Pydantic args/result, `side_effect`, `requires_policy_check`,
+`action_type`, `policy_facts`, `visible`). `GET /tools/manifest?case_id=` returns JSON Schema
+for the tools the case context warrants (`create_credit_memo` only on dispute root causes,
+`apply_payment_plan` never on credit hold). `POST /tools/{name}/invoke` runs the pipeline in
+`service.py`: validate → rate limit (Redis) → idempotency (durable, `tool_invocations`) →
+policy + approval gate → execute (timeout) → mark approval executed → redact → audit +
+`tool.invoked` event + timeline. Money math (`reconcile_lines`, `calculate_credit_memo`,
+`simulate_payment_plan`) is plain code; the gateway recomputes it when checking a credit memo.
+
 ## Deviations from the plan (so far)
 
 * ERP adapter is a library (`libs/recoup-erp-adapter`) rather than a network service; a real
   connector implements the same `ERPAdapter` protocol. Revisit when tool-gateway lands.
 * Ingestion lives inside the case service instead of a separate job + `erp.invoice.overdue` topic.
 * Keycloak is deferred; IAM issues its own JWTs. Interface (`Principal`, `get_principal`) stays.
+* Tone classification is a deterministic lexicon scorer for now; an LLM classifier replaces it in
+  phase 4 behind the same `classify_tone` tool (the *decision* stays in the policy engine).
+* PII redaction is regex-based (phones, SSN/card-like numbers); Presidio can replace `redact_text`.
+* Cedar was not used; the JSON rule grammar in `recoup_policy.engine` is small enough to own.

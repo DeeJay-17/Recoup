@@ -290,7 +290,13 @@ class ScenarioGenerator:
             pos.append(po)
 
             lines = self._invoice_lines_from_po(po)
-            freight = money(self.rng.uniform(15, 220)) if self.rng.random() < 0.7 else Decimal("0")
+            # Freight only where the contract allows it, so ground truth matches deterministic
+            # reconciliation; SHORT_PAY deliberately adds freight below to exercise that rule.
+            freight = (
+                money(self.rng.uniform(15, 220))
+                if contract["freight_billable"] and self.rng.random() < 0.7
+                else Decimal("0")
+            )
             po_number: str | None = po["po_number"]
             billed_to = customer["contacts"][0]["email"]
             status = "OPEN"

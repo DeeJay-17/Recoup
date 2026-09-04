@@ -27,6 +27,9 @@ dev = [
   "recoup-mock-erp",
   "recoup-case",
   "recoup-gateway",
+  "recoup-policy",
+  "recoup-communication",
+  "recoup-tool-gateway",
 ]
 
 [tool.uv.sources.recoup-iam]
@@ -37,11 +40,21 @@ workspace = true
 workspace = true
 [tool.uv.sources.recoup-gateway]
 workspace = true
+[tool.uv.sources.recoup-policy]
+workspace = true
+[tool.uv.sources.recoup-communication]
+workspace = true
+[tool.uv.sources.recoup-tool-gateway]
+workspace = true
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
 extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint.per-file-ignores]
+"services/tool-gateway/recoup_tool_gateway/tools/*.py" = ["E501"]
+"services/tool-gateway/tests/*.py" = ["E501"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC", "SIM", "RUF"]

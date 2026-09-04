@@ -19,7 +19,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from recoup_case.models import Case, CaseInvoice, Outbox, ProposedAction, TimelineEvent
-from recoup_case.schemas import CaseCreate, ProposedActionCreate, TriageUpdate
+from recoup_case.schemas import CaseCreate, ProposedActionCreate, TimelineAppend, TriageUpdate
 from recoup_case.state_machine import (
     ActionStatus,
     AgentMode,
@@ -564,3 +564,16 @@ async def mark_executed(
         payload={"action_id": str(action.id), "result": result},
     )
     return action
+
+
+async def append_event(session: AsyncSession, case: Case, data: TimelineAppend) -> TimelineEvent:
+    """Append an externally-produced event (tool call, email) to the timeline. No state change."""
+    return _timeline(
+        session,
+        case,
+        kind=data.kind,
+        actor_type=data.actor_type,
+        actor_id=data.actor_id,
+        title=data.title,
+        payload=data.payload,
+    )

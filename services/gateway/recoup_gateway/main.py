@@ -29,7 +29,12 @@ ROUTES: dict[str, str] = {
     "iam": settings.iam_url,
     "cases": settings.case_url,
     "erp": settings.mock_erp_url,  # dev only; exposes read endpoints for the Customer 360 page
+    "policy": settings.policy_url,
+    "comm": settings.comm_url,
+    "tools": settings.tool_gateway_url,
 }
+# Humans may only *read* the tool gateway (audit, catalog); agents invoke it internally.
+READ_ONLY_SERVICES = {"tools", "erp"}
 PUBLIC_PATHS = {("iam", "/auth/login")}
 HOP_BY_HOP = {
     "connection",
@@ -159,6 +164,8 @@ async def proxy(service: str, path: str, request: Request) -> Response:
     path = "/" + path
     if _INTERNAL.match(path):
         raise ForbiddenError("internal endpoints are not exposed through the gateway")
+    if service in READ_ONLY_SERVICES and request.method != "GET":
+        raise ForbiddenError(f"'{service}' is read-only through the gateway")
     tenant = _authenticate(request, service, path)
     if tenant and not request.app.state.limiter.allow(tenant):
         return JSONResponse(

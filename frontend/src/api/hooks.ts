@@ -121,3 +121,93 @@ export function useCaseMutation(caseId: string) {
     }),
   };
 }
+
+// ---------- phase 2: policies, email, tool audit ----------
+import { EmailThread, EvaluateResponse, Policy, SimulateResponse, ToolInvocation } from "./schemas";
+
+export function usePolicies() {
+  return useQuery({
+    queryKey: ["policies"],
+    queryFn: async () => z.array(Policy).parse(await api("/policy/policies")),
+  });
+}
+
+export function usePolicyMutations() {
+  const qc = useQueryClient();
+  const invalidate = () => void qc.invalidateQueries({ queryKey: ["policies"] });
+  return {
+    toggle: useMutation({
+      mutationFn: (args: { id: string; enabled: boolean }) =>
+        api(`/policy/policies/${args.id}`, { method: "PATCH", body: JSON.stringify({ enabled: args.enabled }) }),
+      onSuccess: invalidate,
+    }),
+    newVersion: useMutation({
+      mutationFn: (args: { id: string; rule: unknown; decision: string; required_role: string | null; reason: string | null }) =>
+        api(`/policy/policies/${args.id}/versions`, {
+          method: "POST",
+          body: JSON.stringify({ rule: args.rule, decision: args.decision, required_role: args.required_role, reason: args.reason }),
+        }),
+      onSuccess: invalidate,
+    }),
+    simulate: useMutation({
+      mutationFn: async (args: { id: string; rule: unknown; decision: string; required_role: string | null }) =>
+        SimulateResponse.parse(
+          await api(`/policy/policies/${args.id}/simulate`, {
+            method: "POST",
+            body: JSON.stringify({ rule: args.rule, decision: args.decision, required_role: args.required_role, use_history: true }),
+          }),
+        ),
+    }),
+    evaluate: useMutation({
+      mutationFn: async (args: { action_type: string; context: unknown }) =>
+        EvaluateResponse.parse(
+          await api(`/policy/policies/evaluate`, {
+            method: "POST",
+            body: JSON.stringify({ tenant_id: "00000000-0000-0000-0000-000000000000", action_type: args.action_type, context: args.context }),
+          }),
+        ),
+    }),
+    installDefaults: useMutation({
+      mutationFn: () => api(`/policy/policies/install-defaults`, { method: "POST", body: "{}" }),
+      onSuccess: invalidate,
+    }),
+  };
+}
+
+export function useCaseThreads(caseId: string) {
+  return useQuery({
+    queryKey: ["threads", caseId],
+    queryFn: async () => z.array(EmailThread).parse(await api(`/comm/cases/${caseId}/threads`)),
+    refetchInterval: 10_000,
+  });
+}
+
+export function useCaseToolCalls(caseId: string) {
+  return useQuery({
+    queryKey: ["toolcalls", caseId],
+    queryFn: async () => z.array(ToolInvocation).parse(await api(`/tools/invocations?case_id=${caseId}&limit=50`)),
+    refetchInterval: 10_000,
+  });
+}
+
+export function useSendEmail(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { to: string; subject: string; body_text: string; in_reply_to?: string | null }) =>
+      api(`/comm/emails/send`, {
+        method: "POST",
+        body: JSON.stringify({
+          case_id: caseId,
+          to: [args.to],
+          subject: args.subject,
+          body_text: args.body_text,
+          in_reply_to: args.in_reply_to ?? null,
+          idempotency_key: crypto.randomUUID(),
+        }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["threads", caseId] });
+      void qc.invalidateQueries({ queryKey: keys.workspace(caseId) });
+    },
+  });
+}

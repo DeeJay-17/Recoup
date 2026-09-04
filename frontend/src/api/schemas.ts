@@ -150,3 +150,106 @@ export const Me = z.object({
   full_name: z.string(),
   roles: z.array(z.string()),
 });
+
+// ---------- phase 2 ----------
+export const Decision = z.enum(["ALLOW", "REQUIRE_APPROVAL", "DENY"]);
+export type Decision = z.infer<typeof Decision>;
+
+export const PolicyVersion = z.object({
+  id: z.string(),
+  version: z.number(),
+  rule: z.record(z.unknown()),
+  decision: Decision,
+  required_role: z.string().nullable(),
+  reason: z.string().nullable(),
+  created_by: z.string(),
+  created_at: z.string(),
+});
+
+export const Policy = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  action_type: z.string(),
+  priority: z.number(),
+  enabled: z.boolean(),
+  current_version: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  current: PolicyVersion.nullable(),
+});
+export type Policy = z.infer<typeof Policy>;
+
+export const SimulateResponse = z.object({
+  rows: z.array(
+    z.object({
+      context: z.record(z.unknown()),
+      current_decision: Decision,
+      candidate_decision: Decision,
+      changed: z.boolean(),
+    }),
+  ),
+  changed: z.number(),
+  total: z.number(),
+});
+export type SimulateResponse = z.infer<typeof SimulateResponse>;
+
+export const EvaluateResponse = z.object({
+  decision: Decision,
+  required_role: z.string().nullable(),
+  reason: z.string().nullable(),
+  matched: z.array(z.record(z.unknown())),
+  defaulted: z.boolean(),
+});
+
+export const EmailMessage = z.object({
+  id: z.string(),
+  thread_id: z.string(),
+  case_id: z.string().nullable(),
+  direction: z.enum(["IN", "OUT"]),
+  status: z.string(),
+  message_id: z.string(),
+  from_addr: z.string(),
+  to_addrs: z.array(z.string()),
+  cc_addrs: z.array(z.string()),
+  subject: z.string(),
+  body_text: z.string(),
+  template: z.string().nullable(),
+  attachments: z.array(z.record(z.unknown())),
+  invoice_refs: z.array(z.string()),
+  link_method: z.string().nullable(),
+  approval_ref: z.string().nullable(),
+  sent_by: z.string().nullable(),
+  error: z.string().nullable(),
+  sent_at: z.string().nullable(),
+  received_at: z.string().nullable(),
+  created_at: z.string(),
+});
+export type EmailMessage = z.infer<typeof EmailMessage>;
+
+export const EmailThread = z.object({
+  id: z.string(),
+  case_id: z.string().nullable(),
+  subject: z.string(),
+  invoice_refs: z.array(z.string()),
+  last_message_at: z.string().nullable(),
+  messages: z.array(EmailMessage),
+});
+export type EmailThread = z.infer<typeof EmailThread>;
+
+export const ToolInvocation = z.object({
+  id: z.number(),
+  case_id: z.string().nullable(),
+  tool: z.string(),
+  actor: z.string(),
+  args: z.record(z.unknown()),
+  result: z.record(z.unknown()).nullable(),
+  status: z.string(),
+  policy_decision: z.string().nullable(),
+  approval_ref: z.string().nullable(),
+  error: z.string().nullable(),
+  latency_ms: z.number().nullable(),
+  invoked_at: z.string(),
+});
+export type ToolInvocation = z.infer<typeof ToolInvocation>;

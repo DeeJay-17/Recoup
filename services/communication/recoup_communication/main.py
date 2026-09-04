@@ -1,0 +1,50 @@
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+
+from fastapi import FastAPI
+from recoup_common.db import Database
+from recoup_common.events import build_publisher
+from recoup_common.events.outbox import OutboxRelay
+from recoup_common.http import create_app
+
+from recoup_communication.clients import CaseClient, SmtpSender
+from recoup_communication.mailpit import MailpitClient
+from recoup_communication.models import Outbox
+from recoup_communication.routes import internal, router
+from recoup_communication.service import InboundPoller
+from recoup_communication.settings import get_settings
+
+settings = get_settings()
+
+
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    db = Database(settings.database_url, schema=settings.db_schema, pool_size=settings.db_pool_size)
+    publisher = build_publisher(settings)
+    await publisher.start()
+    relay = OutboxRelay(db, publisher, Outbox, poll_interval=settings.outbox_poll_interval_seconds)
+    mailpit = MailpitClient(settings.mailpit_api_url)
+    cases = CaseClient(settings)
+    poller = InboundPoller(db, mailpit, cases, settings)
+    app.state.db = db
+    app.state.smtp = SmtpSender(settings)
+    app.state.cases = cases
+    app.state.mailpit = mailpit
+    app.state.poller = poller
+    relay.start()
+    if settings.inbound_poll_enabled:
+        poller.start()
+    try:
+        yield
+    finally:
+        await poller.stop()
+        await relay.stop()
+        await cases.aclose()
+        await mailpit.aclose()
+        await publisher.stop()
+        await db.dispose()
+
+
+app = create_app(settings, title="Recoup Communication Service", lifespan=lifespan)
+app.include_router(router)
+app.include_router(internal)

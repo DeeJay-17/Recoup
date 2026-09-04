@@ -16,6 +16,7 @@ import httpx
 IAM = os.environ.get("IAM_URL", "http://localhost:8001")
 ERP = os.environ.get("MOCK_ERP_URL", "http://localhost:8002")
 CASE = os.environ.get("CASE_URL", "http://localhost:8003")
+POLICY = os.environ.get("POLICY_URL", "http://localhost:8004")
 
 TENANT = {"slug": "acme", "name": "Acme Industrial Supply"}
 USERS = [
@@ -85,6 +86,12 @@ def main() -> int:
         )
         for k, v in info["scenario_counts"].items():
             print(f"   {k:<18} {v}")
+
+        # --- Policies ---
+        tenant_id = c.get(f"{IAM}/tenants/by-slug/{TENANT['slug']}").json()["id"]
+        r = c.post(f"{POLICY}/internal/tenants/{tenant_id}/install-defaults")
+        r.raise_for_status()
+        print(f"policies: installed {r.json()['installed']} default rules")
 
         # --- Ingest ---
         if not args.no_ingest:

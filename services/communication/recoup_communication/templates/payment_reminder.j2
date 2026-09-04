@@ -1,0 +1,11 @@
+{# Friendly reminder that an invoice is past due. #}
+Subject: Reminder: invoice {{ invoice_ref }} is {{ days_overdue }} days past due
+Hi {{ contact_name }},
+
+This is a friendly reminder that invoice {{ invoice_ref }} for {{ amount }} {{ currency }} was due on {{ due_date }} and remains open.
+
+If payment is already on its way, please disregard this note. If anything is holding it up, just reply here and we'll sort it out together.
+
+Thank you,
+{{ sender_name }}
+{{ company_name }} Accounts Receivable

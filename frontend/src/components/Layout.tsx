@@ -5,6 +5,7 @@ import { Button } from "./ui";
 const nav = [
   { to: "/cases", label: "Cases" },
   { to: "/approvals", label: "Approvals" },
+  { to: "/policies", label: "Policies" },
 ];
 
 export function Layout() {

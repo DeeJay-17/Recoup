@@ -3,6 +3,8 @@ import { useParams } from "@tanstack/react-router";
 import { useCaseWorkspace, useCaseMutation } from "@/api/hooks";
 import { ActionCard } from "@/components/ActionCard";
 import { Timeline } from "@/components/Timeline";
+import { EmailThreadPanel } from "@/components/EmailThread";
+import { ToolCallsPanel } from "@/components/ToolCalls";
 import { Button, Card, Empty, ErrorBox, PriorityDot, StatusBadge } from "@/components/ui";
 import { money, shortId } from "@/lib/format";
 import type { CaseStatus } from "@/api/schemas";
@@ -83,6 +85,14 @@ export function CaseDetailPage() {
             ) : (
               <div className="space-y-3">{actions.map((a) => <ActionCard key={a.id} action={a} caseVersion={c.version} />)}</div>
             )}
+          </Card>
+
+          <Card title="Email">
+            <EmailThreadPanel caseId={c.id} defaultTo={erp.customer?.contacts.find((ct) => ct.active && ct.role === "AP")?.email ?? erp.customer?.contacts.find((ct) => ct.active)?.email} />
+          </Card>
+
+          <Card title="Tool calls">
+            <ToolCallsPanel caseId={c.id} />
           </Card>
 
           <Card title="Activity">

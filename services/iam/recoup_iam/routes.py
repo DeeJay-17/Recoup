@@ -36,7 +36,7 @@ def get_settings_dep(request: Request) -> Settings:
     return request.app.state.settings  # type: ignore[no-any-return]
 
 
-SessionDep = Annotated[AsyncSession, Depends(get_session)]
+SessionDep = Annotated[AsyncSession, Depends(get_session, scope="function")]
 SettingsDep = Annotated[Settings, Depends(get_settings_dep)]
 
 

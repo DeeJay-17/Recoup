@@ -1,0 +1,12 @@
+{# Ask the customer's AP team for a purchase order number so an invoice can be processed. #}
+Subject: PO number needed for invoice {{ invoice_ref }}
+Hi {{ contact_name }},
+
+We're reaching out about invoice {{ invoice_ref }} for {{ amount }} {{ currency }}, dated {{ issue_date }}.
+Our records show this invoice was issued without a valid purchase order number, which we understand your AP team requires before payment can be released.
+
+Could you share the PO number that should be referenced on this invoice? Once we have it, we'll reissue the invoice the same day.
+
+Thank you,
+{{ sender_name }}
+{{ company_name }} Accounts Receivable

@@ -18,8 +18,9 @@ React 18 + TypeScript + TanStack + Tailwind.
 |---|---|---|
 | 0 Foundations | monorepo, `recoup-common`, compose infra, CI, IAM, schemas + Alembic, OTel | ✅ |
 | 1 Domain core | Mock ERP + scenario generator, Case service (state machine, outbox, timeline, approvals), ingestion, console | ✅ |
-| 2 Tools & Policy | Tool Gateway, Policy Service, Communication Service | ⏳ next |
-| 3–8 | Agents (LangGraph + Temporal), HITL, RAG/memory, evals, analytics, launch | planned |
+| 2 Tools & Policy | Policy Service (rule engine + simulator), Communication Service (Mailpit in/out, threading, templates), Tool Gateway (typed manifest, policy/approval gate, reconciliation, audit) | ✅ |
+| 3 First agents | Orchestrator with Temporal `CaseWorkflow`, Supervisor + Triage + Investigator (LangGraph), live timeline | ⏳ next |
+| 4–8 | Resolution agents + HITL, RAG/memory, evals, analytics, launch | planned |
 
 ## Quick start (docker compose)
 
@@ -31,6 +32,10 @@ open http://localhost:3000    # ava@acme-demo.com / password
 ```
 
 Useful UIs: Redpanda console `:8090` · Temporal `:8233` · Mailpit `:8025` · Grafana/Tempo `:3001` · MinIO `:9001`.
+
+```bash
+make simulate-reply           # play the customer: reply to the newest outbound email, poller links it to the case
+```
 
 ## Quick start (host, against your own Postgres)
 
@@ -54,12 +59,29 @@ libs/recoup-erp-adapter  ERPAdapter protocol + canonical models + Mock ERP HTTP 
 services/iam             tenants, users, roles, login → JWT (Keycloak/OIDC later)
 services/mock-erp        realistic AR data with 8 scripted scenarios and hidden ground truth
 services/case            case state machine, timeline (append-only), proposed actions + approvals, ingestion
-services/gateway         edge: JWT check, routing, rate limit, BFF, blocks /internal
+services/gateway         edge: JWT check, routing, rate limit, BFF, blocks /internal, tools read-only
+services/policy          deterministic rule engine: (action, context) -> ALLOW | REQUIRE_APPROVAL(role) | DENY; versions, simulator, audit
+services/communication   SMTP out via Mailpit, inbound polling, threading by Message-ID / invoice number, Jinja templates, PDF text
+services/tool-gateway    the only path to side effects: typed manifest, policy + approval gate, idempotency, redaction, audit
 frontend                 React console: work queue, case workspace, approval inbox
 infra/                   postgres init, OTel collector, Tempo, Grafana provisioning
 scripts/seed.py          one-shot demo seed
 docs/adr                 architecture decision records
 ```
+
+## How a side effect happens (phase 2)
+
+```
+agent ──POST /tools/create_credit_memo/invoke──> Tool Gateway
+   validate args ─> rate limit ─> idempotency ─> Policy Service (facts computed by the gateway,
+   e.g. reconciled credit, PO match, tone score) ─> ALLOW / REQUIRE_APPROVAL / DENY
+   REQUIRE_APPROVAL ⇒ agent calls propose_action; a human approves/edits in the console;
+   agent retries with approval_ref ⇒ gateway verifies the approval (status, action type, not yet
+   executed), applies the human's edits over the model's args, runs the tool, marks it executed,
+   writes tool_invocations + case timeline + tool.invoked event.
+```
+
+Nothing the model says can skip this path: the LLM never talks to the ERP or SMTP directly.
 
 ## Development
 

@@ -1,0 +1,11 @@
+{# Follow up on a short payment where the deduction is not supported by contract. #}
+Subject: Remaining balance on invoice {{ invoice_ref }}
+Hi {{ contact_name }},
+
+Thank you for your payment of {{ paid_amount }} {{ currency }} against invoice {{ invoice_ref }}. We noticed a deduction of {{ deduction_amount }} {{ currency }} noted as "{{ deduction_memo }}".
+
+Under our agreement dated {{ contract_date }}, {{ contract_explanation }}. Could you review and release the remaining {{ deduction_amount }} {{ currency }}? If you believe the deduction is correct, please send the supporting details and we'll take another look.
+
+Thank you,
+{{ sender_name }}
+{{ company_name }} Accounts Receivable

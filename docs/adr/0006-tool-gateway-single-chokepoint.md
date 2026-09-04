@@ -1,6 +1,6 @@
 # ADR-0006: Tool Gateway as the single side-effect chokepoint
 
-**Status:** accepted (phase 2) · **Date:** 2026-09-04
+**Status:** accepted (implemented in phase 2) · **Date:** 2026-09-04
 
 ## Context
 Agents call 20+ tools. Policy, idempotency, rate limiting, PII redaction and audit must be

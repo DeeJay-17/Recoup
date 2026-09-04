@@ -12,6 +12,9 @@ x-service-env: &service-env
   IAM_URL: http://iam:8000
   MOCK_ERP_URL: http://mock-erp:8000
   CASE_URL: http://case:8000
+  POLICY_URL: http://policy:8000
+  COMM_URL: http://communication:8000
+  TOOL_GATEWAY_URL: http://tool-gateway:8000
 
 services:
   # ---------------- infrastructure ----------------
@@ -78,6 +81,11 @@ services:
   redis:
     image: redis:7-alpine
     ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   minio:
     image: minio/minio:RELEASE.2024-10-13T13-34-11Z
@@ -162,13 +170,60 @@ services:
       iam: { condition: service_healthy }
       mock-erp: { condition: service_healthy }
 
+  policy:
+    build: { context: ., dockerfile: services/policy/Dockerfile }
+    environment: *service-env
+    ports: ["8004:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redpanda: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/healthz')\""]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  communication:
+    build: { context: ., dockerfile: services/communication/Dockerfile }
+    environment:
+      <<: *service-env
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      MAILPIT_API_URL: http://mailpit:8025
+      INBOUND_MAILBOX: ${INBOUND_MAILBOX:-ar@acme-demo.com}
+      DEFAULT_TENANT_SLUG: ${DEFAULT_TENANT_SLUG:-acme}
+    ports: ["8005:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redpanda: { condition: service_healthy }
+      iam: { condition: service_healthy }
+      mailpit: { condition: service_started }
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/healthz')\""]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  tool-gateway:
+    build: { context: ., dockerfile: services/tool-gateway/Dockerfile }
+    environment: *service-env
+    ports: ["8006:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redpanda: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      case: { condition: service_started }
+      policy: { condition: service_healthy }
+      communication: { condition: service_healthy }
+      mock-erp: { condition: service_healthy }
+
   gateway:
     build: { context: ., dockerfile: services/gateway/Dockerfile }
     environment:
       <<: *service-env
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000
     ports: ["8000:8000"]
-    depends_on: [iam, case, mock-erp]
+    depends_on: [iam, case, mock-erp, policy, communication, tool-gateway]
 
   frontend:
     build: { context: ./frontend }

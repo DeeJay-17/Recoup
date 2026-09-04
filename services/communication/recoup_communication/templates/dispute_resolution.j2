@@ -1,0 +1,13 @@
+{# Confirm a dispute outcome and the credit memo issued. #}
+Subject: Resolution for invoice {{ invoice_ref }} – credit memo {{ credit_memo_ref }}
+Hi {{ contact_name }},
+
+Thank you for flagging the discrepancy on invoice {{ invoice_ref }}. We reviewed it against your purchase order {{ po_number }} and agree with your finding: {{ finding }}.
+
+We've issued credit memo {{ credit_memo_ref }} for {{ credit_amount }} {{ currency }}. The remaining balance on the invoice is {{ remaining_amount }} {{ currency }}.
+
+Please let us know if anything else needs attention.
+
+Best regards,
+{{ sender_name }}
+{{ company_name }} Accounts Receivable

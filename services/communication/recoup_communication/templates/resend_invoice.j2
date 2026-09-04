@@ -1,0 +1,11 @@
+{# Re-send an invoice to the correct AP contact. #}
+Subject: Invoice {{ invoice_ref }} – copy for your records
+Hi {{ contact_name }},
+
+We're sending over invoice {{ invoice_ref }} ({{ amount }} {{ currency }}, due {{ due_date }}) since our earlier copy may not have reached the right inbox.
+
+If you're not the right contact for accounts payable, we'd appreciate a pointer to whoever is.
+
+Thank you,
+{{ sender_name }}
+{{ company_name }} Accounts Receivable

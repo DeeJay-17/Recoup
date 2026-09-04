@@ -4,6 +4,7 @@ import { LoginPage } from "@/routes/login";
 import { CasesPage } from "@/routes/cases";
 import { CaseDetailPage } from "@/routes/case-detail";
 import { ApprovalsPage } from "@/routes/approvals";
+import { PoliciesPage } from "@/routes/policies";
 import { useAuth } from "@/store/auth";
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
@@ -29,10 +30,11 @@ const indexRoute = createRoute({
 const casesRoute = createRoute({ getParentRoute: () => appRoute, path: "/cases", component: CasesPage });
 const caseDetailRoute = createRoute({ getParentRoute: () => appRoute, path: "/cases/$caseId", component: CaseDetailPage });
 const approvalsRoute = createRoute({ getParentRoute: () => appRoute, path: "/approvals", component: ApprovalsPage });
+const policiesRoute = createRoute({ getParentRoute: () => appRoute, path: "/policies", component: PoliciesPage });
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
-  appRoute.addChildren([indexRoute, casesRoute, caseDetailRoute, approvalsRoute]),
+  appRoute.addChildren([indexRoute, casesRoute, caseDetailRoute, approvalsRoute, policiesRoute]),
 ]);
 
 export const router = createRouter({ routeTree });

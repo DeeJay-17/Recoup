@@ -158,3 +158,13 @@ class IngestResult(BaseModel):
     created: int
     skipped: int
     duration_ms: int
+
+
+class TimelineAppend(BaseModel):
+    """Used by other services (tool gateway, comms) to append to the audit timeline."""
+
+    kind: str = Field(pattern=r"^[a-z_]{2,40}$")
+    actor_type: str = Field(pattern=r"^(agent|human|system)$")
+    actor_id: str
+    title: str = Field(max_length=300)
+    payload: dict[str, Any] = Field(default_factory=dict)
