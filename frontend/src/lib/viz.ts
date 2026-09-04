@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 /** Measures the container so strokes stay exactly 2px instead of being scaled by a viewBox. */
 export function useMeasure<T extends HTMLElement>() {
   const ref = useRef<T | null>(null);
-  const [width, setWidth] = useState(720);
-  useEffect(() => {
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const ro = new ResizeObserver(([entry]) => setWidth(Math.max(320, entry.contentRect.width)));
+    const ro = new ResizeObserver(([entry]) => setWidth(Math.floor(entry.contentRect.width)));
     ro.observe(el);
+    setWidth(Math.floor(el.getBoundingClientRect().width));
     return () => ro.disconnect();
   }, []);
   return { ref, width };
@@ -31,4 +32,41 @@ export function barPath(x: number, y: number, w: number, h: number, dir: "up" | 
   return dir === "up"
     ? `M${x},${y + h} L${x},${y + r} Q${x},${y} ${x + r},${y} L${x + w - r},${y} Q${x + w},${y} ${x + w},${y + r} L${x + w},${y + h} Z`
     : `M${x},${y} L${x + w - r},${y} Q${x + w},${y} ${x + w},${y + r} L${x + w},${y + h - r} Q${x + w},${y + h} ${x + w - r},${y + h} L${x},${y + h} Z`;
+}
+
+const FONT_STACK =
+  'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+let measureCtx: CanvasRenderingContext2D | null | undefined;
+const fitCache = new Map<string, string>();
+
+/**
+ * Truncates a label to a pixel budget, adding an ellipsis, so SVG text can never
+ * overrun into the plot area. Measures with a canvas context; if that is not
+ * available (SSR, jsdom) it falls back to a conservative per-character estimate.
+ */
+export function fitText(text: string, maxPx: number, fontPx = 11): string {
+  const key = `${fontPx}|${maxPx}|${text}`;
+  const cached = fitCache.get(key);
+  if (cached !== undefined) return cached;
+  if (measureCtx === undefined) {
+    measureCtx = typeof document === "undefined" ? null : document.createElement("canvas").getContext("2d");
+  }
+  const width = (s: string) => {
+    if (!measureCtx) return s.length * fontPx * 0.62;
+    measureCtx.font = `${fontPx}px ${FONT_STACK}`;
+    return measureCtx.measureText(s).width;
+  };
+  let out = text;
+  if (width(out) > maxPx) {
+    let lo = 0;
+    let hi = text.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (width(`${text.slice(0, mid).trimEnd()}…`) <= maxPx) lo = mid;
+      else hi = mid - 1;
+    }
+    out = lo <= 0 ? "…" : `${text.slice(0, lo).trimEnd()}…`;
+  }
+  fitCache.set(key, out);
+  return out;
 }

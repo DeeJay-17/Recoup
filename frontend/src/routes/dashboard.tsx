@@ -7,6 +7,9 @@ import { Card, Empty, ErrorBox } from "@/components/ui";
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const hours = (h: number) => (h >= 48 ? `${(h / 24).toFixed(1)} d` : `${h.toFixed(1)} h`);
 const RANGES = [7, 30, 90];
+/** Escalation reasons arrive either as an engine enum or as an agent sentence; show one shape. */
+const reason = (r: string) =>
+  /^[A-Z0-9_]+$/.test(r) ? r.charAt(0) + r.slice(1).toLowerCase().replace(/_/g, " ") : r;
 
 export function DashboardPage() {
   const [days, setDays] = useState(30);
@@ -70,7 +73,7 @@ export function DashboardPage() {
           {escalations.length === 0 ? (
             <Empty>No escalations in this window.</Empty>
           ) : (
-            <BarList data={escalations.map((e) => ({ label: e.reason, value: e.cases, sub: `avg ${e.avg_steps} steps` }))} />
+            <BarList data={escalations.map((e) => ({ label: reason(e.reason), value: e.cases, sub: `avg ${e.avg_steps} steps` }))} />
           )}
         </Card>
       </div>

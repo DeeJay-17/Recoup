@@ -62,7 +62,7 @@ export function Button({
 
 export function Card({ title, children, right }: { title?: ReactNode; children: ReactNode; right?: ReactNode }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+    <section className="min-w-0 rounded-lg border border-slate-200 bg-white shadow-sm">
       {title && (
         <header className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
           <h3 className="text-sm font-semibold text-slate-800">{title}</h3>

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import { ORD, SEQ, SERIES, barPath, money, tick, useMeasure } from "@/lib/viz";
+import { ORD, SEQ, SERIES, barPath, fitText, money, tick, useMeasure } from "@/lib/viz";
 
 function Tooltip({ x, y, children }: { x: number; y: number; children: ReactNode }) {
   return (
@@ -44,7 +44,7 @@ export function LineChart({ data, names, height = 200, valueFmt = tick }: { data
   const ticks = [0, max / 2, max];
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative w-full overflow-hidden" ref={ref}>
       <Legend names={names} />
       <svg width={w} height={height} role="img" aria-label={`${names.join(", ")} over time`}
            onMouseLeave={() => setHover(null)}
@@ -114,7 +114,7 @@ export function BarList({ data, height = 22, ordinal = false, valueFmt = tick }:
   const iw = Math.max(40, w - labelW - valueW);
   const h = data.length * (height + 8);
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative w-full overflow-hidden" ref={ref}>
       <svg width={w} height={h} role="img" aria-label="ranked values">
         {data.map((d, i) => {
           const bw = (d.value / max) * iw;
@@ -123,7 +123,7 @@ export function BarList({ data, height = 22, ordinal = false, valueFmt = tick }:
           return (
             <g key={d.label} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
               <rect x={0} y={y} width={w} height={height} fill="transparent" />
-              <text x={0} y={y + height * 0.72} fontSize={11} fill="var(--text-secondary)">{d.label.slice(0, 26)}</text>
+              <text x={0} y={y + height * 0.72} fontSize={11} fill="var(--text-secondary)">{fitText(d.label, labelW - 12)}<title>{d.label}</title></text>
               <path d={barPath(labelW, y + 2, Math.max(2, bw), height - 4, "right")} fill={fill} />
               <text x={labelW + Math.max(2, bw) + 6} y={y + height * 0.72} fontSize={11} fill="var(--text-primary)">{valueFmt(d.value)}</text>
             </g>
@@ -153,14 +153,14 @@ export function Heatmap({ rows, cols, cells, valueFmt = money }: { rows: string[
   const max = Math.max(1, ...cells.map((c) => c.value));
   const step = (v: number) => (v <= 0 ? -1 : Math.min(SEQ.length - 1, Math.floor((v / max) * SEQ.length)));
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative w-full overflow-hidden" ref={ref}>
       <svg width={w} height={rows.length * rowH + 22} role="img" aria-label="open exposure by root cause and age">
         {cols.map((c, j) => (
           <text key={c} x={labelW + j * cw + cw / 2} y={12} fontSize={10} textAnchor="middle" fill="var(--text-muted)">{c}</text>
         ))}
         {rows.map((r, i) => (
           <g key={r}>
-            <text x={0} y={22 + i * rowH + rowH * 0.62} fontSize={11} fill="var(--text-secondary)">{r.replace("_", " ").slice(0, 22)}</text>
+            <text x={0} y={22 + i * rowH + rowH * 0.62} fontSize={11} fill="var(--text-secondary)">{fitText(r.replace(/_/g, " "), labelW - 12)}<title>{r.replace(/_/g, " ")}</title></text>
             {cols.map((c, j) => {
               const cell = cells.find((x) => x.row === r && x.col === c) ?? { row: r, col: c, value: 0 };
               const s = step(cell.value);
