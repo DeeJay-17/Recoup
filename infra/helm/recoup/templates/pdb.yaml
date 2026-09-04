@@ -1,0 +1,22 @@
+{{- $root := . }}
+{{- if .Values.podDisruptionBudgets.enabled }}
+{{- range $name, $svc := .Values.services }}
+{{- $replicas := $svc.replicas | default $root.Values.replicaCountDefault | int }}
+{{- if gt $replicas 1 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "recoup.fullname" $root }}-{{ $name }}
+  labels:
+    {{- include "recoup.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  maxUnavailable: {{ $root.Values.podDisruptionBudgets.maxUnavailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $root.Release.Name }}
+      app.kubernetes.io/component: {{ $name }}
+{{- end }}
+{{- end }}
+{{- end }}

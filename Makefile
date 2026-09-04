@@ -37,7 +37,11 @@ loadtest: ## Read-path load test against the gateway (CONCURRENCY=20 SECONDS=20)
 	uv run python scripts/loadtest.py --concurrency $${CONCURRENCY:-20} --seconds $${SECONDS:-20}
 
 helm-lint: ## Lint and render the Helm chart
-	helm lint infra/helm/recoup && helm template recoup infra/helm/recoup >/dev/null && echo "chart renders"
+	helm lint infra/helm/recoup
+	helm template recoup infra/helm/recoup >/dev/null
+	helm template recoup infra/helm/recoup --set ingress.enabled=true --set autoscaling.enabled=true \
+		--set networkPolicy.enabled=true >/dev/null
+	@echo "chart renders with defaults and with ingress, autoscaling and network policies on"
 
 up: env ## Start the full stack
 	$(COMPOSE) up -d --build

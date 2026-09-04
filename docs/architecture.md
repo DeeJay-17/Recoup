@@ -3,15 +3,33 @@
 See the full plan in `../recoup-project-plan.md`. This file records what is *actually built* and
 how it deviates.
 
-## Runtime topology (phase 1)
+## Runtime topology
 
+The system diagram lives in the [README](../README.md#architecture). What follows is the write
+path, which is the part that constrains every service.
+
+```mermaid
+flowchart LR
+  S["Any service<br/>(case, iam, comm, tool-gateway)"]
+  DB[("its own schema<br/>+ outbox table")]
+  R["outbox relay<br/>(in-process, per service)"]
+  K[["Redpanda<br/>recoup.&lt;context&gt;"]]
+  C1["orchestrator<br/>starts / signals CaseWorkflow"]
+  C2["realtime<br/>WebSocket fan-out"]
+  C3["analytics<br/>read-model projector"]
+
+  S -- "one transaction:<br/>state change + event row" --> DB
+  DB --> R
+  R -- "CloudEvents 1.0<br/>tenantid + traceparent" --> K
+  K --> C1
+  K --> C2
+  K --> C3
 ```
-browser ──> frontend (nginx/vite) ──> gateway :8000 ──┬──> iam :8001      (schema iam)
-                                                      ├──> case :8003     (schema cases) ──> mock-erp
-                                                      └──> mock-erp :8002 (schema mockerp)
-case ──(outbox relay)──> Kafka topics recoup.case / recoup.iam
-all services ──OTLP──> otel-collector ──> Tempo ──> Grafana
-```
+
+A service never publishes to Kafka inside its request handler. The state change and the event row
+commit together or not at all, and the relay is the only publisher, so a crash between the two is
+impossible rather than merely unlikely. Consumers are idempotent because the relay is
+at-least-once.
 
 ## Conventions every service follows
 

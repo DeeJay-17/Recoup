@@ -88,3 +88,26 @@ containerSecurityContext:
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: false
   capabilities: { drop: ["ALL"] }
+
+# A PDB is rendered only for services that run more than one replica: a minAvailable budget on a
+# singleton blocks node drains forever.
+podDisruptionBudgets:
+  enabled: true
+  maxUnavailable: 1
+
+# CPU autoscaling for the services that actually see load. Queue-depth scaling (Temporal task
+# backlog, Kafka consumer lag) needs KEDA and is left to the cluster operator.
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+  services: [gateway, case, tool-gateway, orchestrator]
+
+# Ingress-only network policies. Off by default because they do nothing unless the CNI enforces
+# them, and a half-enforced policy is worse than none.
+networkPolicy:
+  enabled: false
+  # Where public traffic comes from. Empty means any namespace, which is only sane in a
+  # single-tenant cluster; set it to your ingress controller's namespace.
+  ingressNamespaceSelector: {}

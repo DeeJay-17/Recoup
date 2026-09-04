@@ -27,6 +27,81 @@ React 18 + TypeScript + TanStack + Tailwind.
 | 7 Analytics & polish | Analytics service projecting the event stream into a read model, manager dashboard (exposure, aging heatmap, funnel, agent latency, escalation reasons), Helm chart, read-path load test | ✅ |
 | 8 Launch | demo video, blog post, public deploy | ⏳ next |
 
+## Architecture
+
+Thirteen FastAPI services behind one gateway, one Postgres cluster with a schema per service, and
+every state change leaving the database through a transactional outbox.
+
+```mermaid
+flowchart TB
+  UI["React ops console :3000"]
+  GW["gateway :8000<br/>JWT · rate limit · routes /api/* to every service"]
+  RT["realtime :8008<br/>WebSocket fan-out"]
+  ORC["orchestrator :8007<br/>Supervisor + six LangGraph specialists"]
+  TMP["Temporal<br/>CaseWorkflow: signals, timers, durable retries"]
+  TG["tool-gateway :8006<br/>every side effect goes through here"]
+  POL["policy :8004<br/>ALLOW / REQUIRE_APPROVAL / DENY"]
+  SVC["case :8003 · mock-erp :8002 · communication :8005<br/>knowledge :8009 · iam :8001"]
+  PG[("PostgreSQL 16 + pgvector<br/>one schema and one outbox table per service")]
+  BUS[["Redpanda<br/>recoup.iam · case · erp · agent · comm · policy · tool"]]
+  AN["analytics :8011 · evals :8010"]
+
+  UI --> GW
+  RT -. "live agent timeline" .-> UI
+  GW --> ORC
+  GW --> SVC
+  ORC <--> TMP
+  ORC -- "the only tool call it can make" --> TG
+  TG --> POL
+  TG --> SVC
+  SVC --> PG
+  PG -- "outbox relay" --> BUS
+  BUS --> ORC
+  BUS --> RT
+  BUS --> AN
+```
+
+| Service | Port | Owns |
+|---|---|---|
+| gateway | 8000 | JWT verification, per-tenant rate limit, routing |
+| iam | 8001 | tenants, users, roles, tokens |
+| mock-erp | 8002 | invoices, payments, credit memos, POs, contracts |
+| case | 8003 | case state machine, timeline, approvals, outbox |
+| policy | 8004 | deterministic rule engine and simulator |
+| communication | 8005 | outbound and inbound email, threading, templates |
+| tool-gateway | 8006 | typed tool registry, policy and approval gate, audit |
+| orchestrator | 8007 | Temporal workflows, LangGraph agents, prompts, models |
+| realtime | 8008 | WebSocket stream of agent and case events |
+| knowledge | 8009 | hybrid retrieval, customer memory |
+| evals | 8010 | golden datasets, judges, red-team probes |
+| analytics | 8011 | event-sourced read model and metrics |
+| frontend | 3000 | React ops console |
+
+A case moves through a server-validated state machine. Active states can move between each other
+as the supervisor changes its mind; the authoritative matrix is
+[`state_machine.py`](./services/case/recoup_case/state_machine.py).
+
+```mermaid
+stateDiagram-v2
+  [*] --> NEW: erp.invoice.overdue
+  NEW --> TRIAGED: root cause + confidence + evidence
+  TRIAGED --> INVESTIGATING: needs ERP or document evidence
+  TRIAGED --> NEGOTIATING: cash-flow, offer a plan
+  INVESTIGATING --> PENDING_APPROVAL: proposal needs a human
+  NEGOTIATING --> PENDING_APPROVAL
+  INVESTIGATING --> AWAITING_CUSTOMER: question sent
+  NEGOTIATING --> AWAITING_CUSTOMER: offer sent
+  PENDING_APPROVAL --> ACTION_TAKEN: approved or edited, then executed
+  AWAITING_CUSTOMER --> INVESTIGATING: reply parsed by the intent extractor
+  ACTION_TAKEN --> RESOLVED: balance cleared or offer accepted
+  AWAITING_CUSTOMER --> ESCALATED: three follow-ups, no reply
+  INVESTIGATING --> ESCALATED: policy denied or evidence exhausted
+  ESCALATED --> RESOLVED: a human finishes it
+  ESCALATED --> WRITTEN_OFF: uncollectable
+  RESOLVED --> [*]
+  WRITTEN_OFF --> [*]
+```
+
 ## Choosing an LLM provider
 
 Recoup is provider-agnostic. Every model call goes through `libs/recoup-llm`, which wraps
@@ -68,6 +143,7 @@ make simulate-reply           # one-off customer reply to the newest outbound em
 ```bash
 cp .env.example .env
 # edit DATABASE_URL, e.g. postgresql+asyncpg://user:pass@localhost:5432/recoup
+# (the compose Postgres is published on host port 5433, not 5432)
 # leave KAFKA_BOOTSTRAP_SERVERS empty to log events instead of publishing
 make install && make migrate
 make dev-iam & make dev-erp & make dev-case & make dev-gateway & make dev-web
@@ -104,14 +180,36 @@ docs/adr                 architecture decision records
 
 ## How a side effect happens (phase 2)
 
-```
-agent ──POST /tools/create_credit_memo/invoke──> Tool Gateway
-   validate args ─> rate limit ─> idempotency ─> Policy Service (facts computed by the gateway,
-   e.g. reconciled credit, PO match, tone score) ─> ALLOW / REQUIRE_APPROVAL / DENY
-   REQUIRE_APPROVAL ⇒ agent calls propose_action; a human approves/edits in the console;
-   agent retries with approval_ref ⇒ gateway verifies the approval (status, action type, not yet
-   executed), applies the human's edits over the model's args, runs the tool, marks it executed,
-   writes tool_invocations + case timeline + tool.invoked event.
+```mermaid
+sequenceDiagram
+  autonumber
+  participant A as Specialist agent
+  participant TG as Tool Gateway
+  participant P as Policy Service
+  participant H as Human (console)
+  participant X as ERP / SMTP
+
+  A->>TG: POST /tools/create_credit_memo/invoke
+  TG->>TG: validate args · rate limit · idempotency key
+  TG->>P: evaluate(facts the gateway computed:<br/>reconciled credit, PO match, tone score)
+
+  alt DENY
+    P-->>TG: DENY
+    TG-->>A: policy_denied (no side effect)
+  else REQUIRE_APPROVAL
+    P-->>TG: REQUIRE_APPROVAL
+    TG-->>A: approval_required
+    A->>TG: propose_action(...)
+    H->>TG: approve or edit → approval_ref
+    A->>TG: invoke again with approval_ref
+    TG->>TG: verify approval, apply the human's edits<br/>over the model's args, mark it executed
+    TG->>X: run the tool
+  else ALLOW
+    P-->>TG: ALLOW
+    TG->>X: run the tool
+  end
+
+  TG->>TG: tool_invocations row + case timeline + tool.invoked event
 ```
 
 Nothing the model says can skip this path: the LLM never talks to the ERP or SMTP directly.
@@ -203,7 +301,7 @@ raise it to measure service capacity rather than the limiter.
 ```bash
 make lint      # ruff + mypy (strict) + eslint + tsc
 make test      # unit tests (no DB)
-TEST_DATABASE_URL=postgresql+asyncpg://recoup:recoup@localhost:5432/recoup make test-all
+TEST_DATABASE_URL=postgresql+asyncpg://recoup:recoup@localhost:5433/recoup make test-all
 ```
 
 ## Scripted scenarios (Mock ERP)

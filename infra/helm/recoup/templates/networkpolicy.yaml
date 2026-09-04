@@ -1,0 +1,101 @@
+{{- $root := . }}
+{{- if .Values.networkPolicy.enabled }}
+{{- $instance := .Release.Name }}
+{{- $full := include "recoup.fullname" . }}
+# 1. Nothing may reach a Recoup pod unless a later policy allows it. NetworkPolicies are additive,
+#    so this floor plus the allowances below is the whole ingress story.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-default-deny-ingress
+  labels:
+    {{- include "recoup.labels" $root | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $instance }}
+  policyTypes: [Ingress]
+# 2. The three public surfaces accept traffic from the ingress controller.
+{{- range $name, $svc := .Values.services }}
+{{- if $svc.public }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-{{ $name }}-public
+  labels:
+    {{- include "recoup.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $instance }}
+      app.kubernetes.io/component: {{ $name }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $root.Values.networkPolicy.ingressNamespaceSelector | nindent 14 }}
+      ports:
+        - port: {{ $svc.port }}
+{{- end }}
+{{- end }}
+# 3. Every service accepts traffic from anything else in this release, except the Tool Gateway,
+#    which is the single side-effect chokepoint and gets its own narrower rule below. Public
+#    services need this too: iam is called by case, communication, knowledge and evals, not only
+#    from the ingress.
+{{- range $name, $svc := .Values.services }}
+{{- if ne $name "tool-gateway" }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-{{ $name }}-internal
+  labels:
+    {{- include "recoup.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $instance }}
+      app.kubernetes.io/component: {{ $name }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ $instance }}
+      ports:
+        - port: {{ $svc.port }}
+{{- end }}
+{{- end }}
+# 4. Only the three services that hold a ToolGatewayClient may reach the Tool Gateway. Nothing else
+#    in the cluster can invoke a tool, which is the network mirror of the in-process rule that
+#    agents never touch the ERP or SMTP directly.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-tool-gateway
+  labels:
+    {{- include "recoup.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: tool-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $instance }}
+      app.kubernetes.io/component: tool-gateway
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- range $caller := list "gateway" "orchestrator" "evals" }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ $instance }}
+              app.kubernetes.io/component: {{ $caller }}
+        {{- end }}
+      ports:
+        - port: {{ (get $root.Values.services "tool-gateway").port }}
+{{- end }}
