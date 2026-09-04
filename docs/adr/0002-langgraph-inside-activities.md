@@ -1,6 +1,6 @@
 # ADR-0002: LangGraph for agent graphs, executed inside Temporal activities
 
-**Status:** accepted (phase 3) · **Date:** 2026-09-04
+**Status:** accepted (implemented in phase 3) · **Date:** 2026-09-04
 
 ## Context
 We want explicit multi-agent hand-offs, structured state, and checkpointing without inventing a

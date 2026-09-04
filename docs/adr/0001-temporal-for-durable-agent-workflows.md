@@ -1,6 +1,6 @@
 # ADR-0001: Temporal for durable agent workflows
 
-**Status:** accepted (phase 3 implements) · **Date:** 2026-09-04
+**Status:** accepted (implemented in phase 3) · **Date:** 2026-09-04
 
 ## Context
 A case can live for weeks: it waits on customer email replies and human approvals, and agent

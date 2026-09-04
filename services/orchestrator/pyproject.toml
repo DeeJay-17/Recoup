@@ -1,0 +1,22 @@
+[project]
+name = "recoup-orchestrator"
+version = "0.1.0"
+description = "Recoup Agent Orchestrator: Temporal CaseWorkflow + LangGraph specialist agents"
+requires-python = ">=3.12"
+dependencies = [
+  "recoup-common",
+  "recoup-llm",
+  "uvicorn[standard]>=0.30",
+  "temporalio>=1.8",
+  "langgraph>=0.2",
+  "langgraph-checkpoint-postgres>=2.0",
+  "psycopg[binary,pool]>=3.2",
+  "httpx>=0.27",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["recoup_orchestrator"]

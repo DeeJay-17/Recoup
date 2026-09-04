@@ -17,7 +17,7 @@ def configure_logging(level: str = "INFO", *, json: bool = False, service_name: 
         structlog.processors.format_exc_info,
     ]
     renderer: structlog.types.Processor = (
-        structlog.processors.JSONRenderer() if json else structlog.dev.ConsoleRenderer()
+        structlog.processors.JSONRenderer(default=repr) if json else structlog.dev.ConsoleRenderer()
     )
     structlog.configure(
         processors=[*shared, structlog.stdlib.ProcessorFormatter.wrap_for_formatter],

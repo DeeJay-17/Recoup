@@ -1,17 +1,20 @@
 import { Link, Outlet, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/store/auth";
 import { Button } from "./ui";
+import { useLiveEvents } from "@/hooks/useLiveEvents";
 
 const nav = [
   { to: "/cases", label: "Cases" },
   { to: "/approvals", label: "Approvals" },
   { to: "/policies", label: "Policies" },
+  { to: "/agents", label: "Agents" },
 ];
 
 export function Layout() {
   const me = useAuth((s) => s.me);
   const logout = useAuth((s) => s.logout);
   const navigate = useNavigate();
+  const live = useLiveEvents();
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur">
@@ -32,6 +35,10 @@ export function Layout() {
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-3 text-sm text-slate-600">
+            <span className="flex items-center gap-1 text-xs" title={live.connected ? "Live updates connected" : "Live updates disconnected"}>
+              <span className={live.connected ? "inline-block h-2 w-2 rounded-full bg-emerald-500" : "inline-block h-2 w-2 rounded-full bg-slate-300"} />
+              {live.connected ? "live" : "offline"}
+            </span>
             {me && (
               <span>
                 {me.full_name} <span className="text-slate-400">· {me.roles.join(", ")} · {me.tenant_slug}</span>

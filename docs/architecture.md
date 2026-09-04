@@ -78,6 +78,38 @@ policy + approval gate → execute (timeout) → mark approval executed → reda
 `tool.invoked` event + timeline. Money math (`reconcile_lines`, `calculate_credit_memo`,
 `simulate_payment_plan`) is plain code; the gateway recomputes it when checking a credit memo.
 
+## LLM layer (`libs/recoup-llm`)
+
+`LLMClient.chat(messages, tools, task)` returns an `AssistantTurn` (text, tool calls, usage,
+cost). `LangChainLLM` implements it for any provider via `init_chat_model` + `bind_tools`;
+`HeuristicLLM` implements it with registered rule-based policies per task; `WithFallback`
+routes to a second provider after repeated failures. `ModelRouter` exposes two tiers (`fast`,
+`strong`) with per-tenant overrides stored in `agents.model_configs` (keys never returned by
+the API). Structured outputs are obtained the same way on every provider: the agent must call
+a `submit_<agent>` tool whose JSON Schema is the Pydantic output model; invalid submissions get
+a repair message (max 2) and then the step fails.
+
+## Orchestrator
+
+* `CaseWorkflow` (Temporal): deterministic loop over activities `load_case_state`,
+  `supervisor_step`, `run_specialist`, `merge_signals`, `record_wait`, `finalize_case`.
+  Signals map 1:1 to Kafka events consumed by `consumer.EventBridge`. Human takeover pauses
+  the loop; release resumes it. Waits use Temporal timers, not polling.
+* `agents/loop.py`: LangGraph `StateGraph` (model ⇄ tools) shared by all specialists; tools
+  come from the Tool Gateway manifest filtered by the spec's allow-list.
+* Supervisor guardrails live in code, not prompts: unavailable specialists, a specialist run
+  twice, RESOLVED without investigation, or an exhausted budget all become ESCALATED.
+* Deterministic side effects of specialist outputs (`set triage`, escalation brief) are applied
+  by the activity, never by the model.
+* `agent_runs` / `agent_steps` store inputs, outputs, tool logs, full message transcripts,
+  tokens and cost per step; `prompt_versions` are seeded from `prompts/*.md` and editable.
+
+## Realtime
+
+Each replica consumes all topics with a unique consumer group and fans events out over
+`/ws?token=<jwt>` to that tenant's sockets, with a small replay buffer for late joiners. The
+console invalidates TanStack queries on `case.*`, `agent.*`, `comm.*`, `tool.*` events.
+
 ## Deviations from the plan (so far)
 
 * ERP adapter is a library (`libs/recoup-erp-adapter`) rather than a network service; a real
@@ -88,3 +120,6 @@ policy + approval gate → execute (timeout) → mark approval executed → reda
   phase 4 behind the same `classify_tone` tool (the *decision* stays in the policy engine).
 * PII redaction is regex-based (phones, SSN/card-like numbers); Presidio can replace `redact_text`.
 * Cedar was not used; the JSON rule grammar in `recoup_policy.engine` is small enough to own.
+* Langfuse is not wired yet (phase 6); traces and per-step token/cost accounting are in Postgres and OTel.
+* LangGraph checkpoints use the in-memory saver inside an activity; Temporal provides durability
+  across steps. The Postgres saver is a config switch (`LANGGRAPH_CHECKPOINT_URL`) for later.

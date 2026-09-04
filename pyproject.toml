@@ -11,6 +11,7 @@ members = ["libs/*", "services/*"]
 [tool.uv.sources]
 recoup-common = { workspace = true }
 recoup-erp-adapter = { workspace = true }
+recoup-llm = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -23,6 +24,7 @@ dev = [
   "asgi-lifespan>=2.1",
   "recoup-common",
   "recoup-erp-adapter",
+  "recoup-llm",
   "recoup-iam",
   "recoup-mock-erp",
   "recoup-case",
@@ -30,6 +32,8 @@ dev = [
   "recoup-policy",
   "recoup-communication",
   "recoup-tool-gateway",
+  "recoup-orchestrator",
+  "recoup-realtime",
 ]
 
 [tool.uv.sources.recoup-iam]
@@ -46,6 +50,10 @@ workspace = true
 workspace = true
 [tool.uv.sources.recoup-tool-gateway]
 workspace = true
+[tool.uv.sources.recoup-orchestrator]
+workspace = true
+[tool.uv.sources.recoup-realtime]
+workspace = true
 
 [tool.ruff]
 line-length = 100
@@ -55,6 +63,8 @@ extend-exclude = ["alembic/versions"]
 [tool.ruff.lint.per-file-ignores]
 "services/tool-gateway/recoup_tool_gateway/tools/*.py" = ["E501"]
 "services/tool-gateway/tests/*.py" = ["E501"]
+"services/orchestrator/recoup_orchestrator/agents/*.py" = ["E501"]
+"services/orchestrator/tests/*.py" = ["E501"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC", "SIM", "RUF"]

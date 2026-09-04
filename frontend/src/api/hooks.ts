@@ -211,3 +211,86 @@ export function useSendEmail(caseId: string) {
     },
   });
 }
+
+// ---------- phase 3: agents ----------
+import { AgentRun, ModelConfig, Prompt, RunDetail } from "./schemas";
+
+export function useRuns(filter: { case_id?: string; status?: string } = {}) {
+  return useQuery({
+    queryKey: ["runs", filter],
+    queryFn: async () => z.array(AgentRun).parse(await api(`/agents/runs${qs({ limit: 100, ...filter })}`)),
+    refetchInterval: 10_000,
+  });
+}
+
+export function useRun(runId: string | null, withMessages = false) {
+  return useQuery({
+    queryKey: ["run", runId, withMessages],
+    queryFn: async () => RunDetail.parse(await api(`/agents/runs/${runId}${qs({ with_messages: withMessages || undefined })}`)),
+    enabled: !!runId,
+    refetchInterval: 5_000,
+  });
+}
+
+export function useCaseRun(caseId: string) {
+  return useQuery({
+    queryKey: ["caserun", caseId],
+    queryFn: async () => {
+      const r = await api<unknown>(`/agents/cases/${caseId}/run`);
+      return r === null ? null : RunDetail.parse(r);
+    },
+    refetchInterval: 5_000,
+  });
+}
+
+export function useStartRun() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (caseId: string) => api<unknown>(`/agents/runs`, { method: "POST", body: JSON.stringify({ case_id: caseId }) }),
+    onSuccess: (_d, caseId) => {
+      void qc.invalidateQueries({ queryKey: ["caserun", caseId] });
+      void qc.invalidateQueries({ queryKey: ["runs"] });
+    },
+  });
+}
+
+export function useCancelRun() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (runId: string) => api<unknown>(`/agents/runs/${runId}/cancel`, { method: "POST" }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["runs"] }),
+  });
+}
+
+export function usePrompts() {
+  return useQuery({ queryKey: ["prompts"], queryFn: async () => z.array(Prompt).parse(await api("/agents/prompts")) });
+}
+
+export function usePromptMutations() {
+  const qc = useQueryClient();
+  const invalidate = () => void qc.invalidateQueries({ queryKey: ["prompts"] });
+  return {
+    addVersion: useMutation({
+      mutationFn: (a: { name: string; content: string; notes?: string; activate: boolean }) =>
+        api(`/agents/prompts/${a.name}/versions`, { method: "POST", body: JSON.stringify(a) }),
+      onSuccess: invalidate,
+    }),
+    activate: useMutation({
+      mutationFn: (a: { name: string; version: number }) => api(`/agents/prompts/${a.name}/activate/${a.version}`, { method: "POST" }),
+      onSuccess: invalidate,
+    }),
+  };
+}
+
+export function useModelConfig() {
+  return useQuery({ queryKey: ["modelconfig"], queryFn: async () => ModelConfig.parse(await api("/agents/model-config")) });
+}
+
+export function useSaveModelConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (overrides: Record<string, Record<string, string | null>>) =>
+      api(`/agents/model-config`, { method: "PUT", body: JSON.stringify({ overrides }) }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["modelconfig"] }),
+  });
+}

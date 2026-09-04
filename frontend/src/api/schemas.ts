@@ -253,3 +253,73 @@ export const ToolInvocation = z.object({
   invoked_at: z.string(),
 });
 export type ToolInvocation = z.infer<typeof ToolInvocation>;
+
+// ---------- phase 3: agent runs ----------
+export const AgentStep = z.object({
+  id: z.number(),
+  step_no: z.number(),
+  agent_name: z.string(),
+  kind: z.string(),
+  status: z.string(),
+  input_summary: z.record(z.unknown()).nullable(),
+  output: z.record(z.unknown()).nullable(),
+  tool_calls: z.array(z.record(z.unknown())),
+  provider: z.string().nullable(),
+  model: z.string().nullable(),
+  tokens_in: z.number(),
+  tokens_out: z.number(),
+  cost_usd: z.number(),
+  latency_ms: z.number().nullable(),
+  error: z.string().nullable(),
+  trace_id: z.string().nullable(),
+  started_at: z.string(),
+  ended_at: z.string().nullable(),
+  messages: z.array(z.record(z.unknown())).nullable().optional(),
+});
+export type AgentStep = z.infer<typeof AgentStep>;
+
+export const AgentRun = z.object({
+  id: z.string(),
+  case_id: z.string(),
+  workflow_id: z.string(),
+  mode: z.string(),
+  status: z.string(),
+  phase: z.string().nullable(),
+  prompt_bundle: z.record(z.unknown()),
+  models: z.record(z.unknown()),
+  steps: z.number(),
+  tokens_in: z.number(),
+  tokens_out: z.number(),
+  cost_usd: z.number(),
+  outcome: z.record(z.unknown()).nullable(),
+  started_at: z.string(),
+  updated_at: z.string(),
+  ended_at: z.string().nullable(),
+});
+export type AgentRun = z.infer<typeof AgentRun>;
+
+export const RunDetail = z.object({
+  run: AgentRun,
+  steps: z.array(AgentStep),
+  workflow: z.record(z.unknown()).nullable().optional(),
+});
+export type RunDetail = z.infer<typeof RunDetail>;
+
+export const Prompt = z.object({
+  id: z.string(),
+  name: z.string(),
+  version: z.number(),
+  content: z.string(),
+  notes: z.string().nullable(),
+  created_by: z.string(),
+  created_at: z.string(),
+  is_active: z.boolean(),
+});
+export type Prompt = z.infer<typeof Prompt>;
+
+export const ModelConfig = z.object({
+  defaults: z.record(z.object({ provider: z.string(), model: z.string() })),
+  overrides: z.record(z.record(z.string().nullable())),
+  effective: z.record(z.object({ provider: z.string(), model: z.string() })),
+});
+export type ModelConfig = z.infer<typeof ModelConfig>;

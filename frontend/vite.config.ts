@@ -12,6 +12,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": { target: process.env.GATEWAY_URL ?? "http://localhost:8000", changeOrigin: true },
+      "/ws": { target: process.env.REALTIME_URL ?? "http://localhost:8008", ws: true, changeOrigin: true },
     },
   },
 });

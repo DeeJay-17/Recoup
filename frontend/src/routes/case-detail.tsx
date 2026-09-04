@@ -5,6 +5,7 @@ import { ActionCard } from "@/components/ActionCard";
 import { Timeline } from "@/components/Timeline";
 import { EmailThreadPanel } from "@/components/EmailThread";
 import { ToolCallsPanel } from "@/components/ToolCalls";
+import { AgentRunCard } from "@/components/AgentRunCard";
 import { Button, Card, Empty, ErrorBox, PriorityDot, StatusBadge } from "@/components/ui";
 import { money, shortId } from "@/lib/format";
 import type { CaseStatus } from "@/api/schemas";
@@ -85,6 +86,10 @@ export function CaseDetailPage() {
             ) : (
               <div className="space-y-3">{actions.map((a) => <ActionCard key={a.id} action={a} caseVersion={c.version} />)}</div>
             )}
+          </Card>
+
+          <Card title="Agents">
+            <AgentRunCard caseId={c.id} closed={closed} />
           </Card>
 
           <Card title="Email">

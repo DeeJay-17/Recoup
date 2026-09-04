@@ -15,6 +15,8 @@ x-service-env: &service-env
   POLICY_URL: http://policy:8000
   COMM_URL: http://communication:8000
   TOOL_GATEWAY_URL: http://tool-gateway:8000
+  ORCHESTRATOR_URL: http://orchestrator:8000
+  TEMPORAL_ADDRESS: temporal:7233
 
 services:
   # ---------------- infrastructure ----------------
@@ -60,13 +62,17 @@ services:
 
   temporal:
     image: temporalio/auto-setup:1.25.2
+    healthcheck:
+      test: ["CMD-SHELL", "temporal operator cluster health --address temporal:7233 2>/dev/null | grep -q SERVING || tctl --address temporal:7233 cluster health | grep -q SERVING"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
     environment:
       DB: postgres12
       DB_PORT: "5432"
       POSTGRES_USER: recoup
       POSTGRES_PWD: recoup
       POSTGRES_SEEDS: postgres
-      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
     ports: ["7233:7233"]
     depends_on: { postgres: { condition: service_healthy } }
 
@@ -217,18 +223,45 @@ services:
       communication: { condition: service_healthy }
       mock-erp: { condition: service_healthy }
 
+  orchestrator:
+    build: { context: ., dockerfile: services/orchestrator/Dockerfile }
+    environment:
+      <<: *service-env
+      # Provider from .env; the orchestrator itself falls back to heuristic when the key is missing.
+      LLM_PROVIDER: ${LLM_PROVIDER:-heuristic}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL_FAST: ${LLM_MODEL_FAST:-gemini-2.5-flash}
+      LLM_MODEL_STRONG: ${LLM_MODEL_STRONG:-gemini-2.5-pro}
+      LLM_FALLBACK_PROVIDER: ${LLM_FALLBACK_PROVIDER:-}
+      AUTOSTART_ON_CASE_CREATED: ${AUTOSTART_ON_CASE_CREATED:-true}
+    ports: ["8007:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redpanda: { condition: service_healthy }
+      temporal: { condition: service_started }
+      case: { condition: service_started }
+      tool-gateway: { condition: service_started }
+
+  realtime:
+    build: { context: ., dockerfile: services/realtime/Dockerfile }
+    environment: *service-env
+    ports: ["8008:8000"]
+    depends_on:
+      redpanda: { condition: service_healthy }
+
   gateway:
     build: { context: ., dockerfile: services/gateway/Dockerfile }
     environment:
       <<: *service-env
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000
     ports: ["8000:8000"]
-    depends_on: [iam, case, mock-erp, policy, communication, tool-gateway]
+    depends_on: [iam, case, mock-erp, policy, communication, tool-gateway, orchestrator]
 
   frontend:
     build: { context: ./frontend }
     ports: ["3000:80"]
-    depends_on: [gateway]
+    depends_on: [gateway, realtime]
 
 volumes:
   pgdata:

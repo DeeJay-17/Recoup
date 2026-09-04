@@ -32,6 +32,7 @@ ROUTES: dict[str, str] = {
     "policy": settings.policy_url,
     "comm": settings.comm_url,
     "tools": settings.tool_gateway_url,
+    "agents": settings.orchestrator_url,
 }
 # Humans may only *read* the tool gateway (audit, catalog); agents invoke it internally.
 READ_ONLY_SERVICES = {"tools", "erp"}

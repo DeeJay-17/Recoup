@@ -38,3 +38,12 @@ class EventTypes:
     CASE_TAKEOVER = "case.takeover"
     CASE_RELEASED = "case.released"
     CASE_NOTE_ADDED = "case.note.added"
+
+    COMM_EMAIL_SENT = "comm.email.sent"
+    COMM_EMAIL_RECEIVED = "comm.email.received"
+
+    AGENT_RUN_STARTED = "agent.run.started"
+    AGENT_RUN_WAITING = "agent.run.waiting"
+    AGENT_RUN_COMPLETED = "agent.run.completed"
+    AGENT_STEP_STARTED = "agent.step.started"
+    AGENT_STEP_COMPLETED = "agent.step.completed"

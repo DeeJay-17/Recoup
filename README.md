@@ -10,6 +10,7 @@ ops console. Every action is auditable and replayable.
 
 **Stack:** Python 3.12 / FastAPI / SQLAlchemy 2 (async) / Alembic · PostgreSQL 16 + pgvector ·
 Kafka (Redpanda) · Temporal · Redis · MinIO · Mailpit · OpenTelemetry → Tempo/Grafana ·
+LangGraph + LangChain (any provider: Gemini, OpenAI-compatible, Anthropic, ...) ·
 React 18 + TypeScript + TanStack + Tailwind.
 
 ## Status
@@ -19,15 +20,36 @@ React 18 + TypeScript + TanStack + Tailwind.
 | 0 Foundations | monorepo, `recoup-common`, compose infra, CI, IAM, schemas + Alembic, OTel | ✅ |
 | 1 Domain core | Mock ERP + scenario generator, Case service (state machine, outbox, timeline, approvals), ingestion, console | ✅ |
 | 2 Tools & Policy | Policy Service (rule engine + simulator), Communication Service (Mailpit in/out, threading, templates), Tool Gateway (typed manifest, policy/approval gate, reconciliation, audit) | ✅ |
-| 3 First agents | Orchestrator with Temporal `CaseWorkflow`, Supervisor + Triage + Investigator (LangGraph), live timeline | ⏳ next |
-| 4–8 | Resolution agents + HITL, RAG/memory, evals, analytics, launch | planned |
+| 3 First agents | Provider-agnostic LLM layer (Gemini default), Temporal `CaseWorkflow`, LangGraph Supervisor + Triage + Investigator, prompt versions, model routing, Realtime WebSocket stream, Agents console | ✅ |
+| 4 Resolution agents + HITL | Reconciler, Negotiator, Communicator, approval gates in the workflow, diff editor | ⏳ next |
+| 5–8 | RAG/memory, evals, analytics, launch | planned |
+
+## Choosing an LLM provider
+
+Recoup is provider-agnostic. Every model call goes through `libs/recoup-llm`, which wraps
+LangChain's `init_chat_model`, so any provider LangChain supports works once its package is
+installed (Gemini, OpenAI and OpenAI-compatible servers such as vLLM/Ollama/OpenRouter,
+Anthropic, Azure OpenAI, Groq, Mistral, ...). Configure it in `.env`:
+
+```bash
+LLM_PROVIDER=google_genai          # Gemini (default)
+LLM_API_KEY=<your Gemini API key>  # from Google AI Studio
+LLM_MODEL_FAST=gemini-2.5-flash    # triage, tone checks
+LLM_MODEL_STRONG=gemini-2.5-pro    # supervisor, investigator, reconciliation, negotiation
+# OpenAI-compatible example:  LLM_PROVIDER=openai LLM_BASE_URL=http://localhost:11434/v1 LLM_MODEL_FAST=llama3.1
+# No key at all:              LLM_PROVIDER=heuristic  (deterministic rule-based agents; what CI uses)
+```
+
+Managers can also override provider/model/key per tenant from **Agents → Models** in the
+console (tenant BYO-key). Prices per model live in `LLM_PRICES` for cost-per-case reporting.
 
 ## Quick start (docker compose)
 
 ```bash
 cp .env.example .env          # defaults work with compose as-is
 make up                       # builds + starts infra and services
-make seed                     # demo tenant/users, 400 scripted invoices, first ingestion pass
+make seed                     # demo tenant/users, 400 scripted invoices, policies, first ingestion pass
+                              # every new case starts a CaseWorkflow automatically (AUTOSTART_ON_CASE_CREATED)
 open http://localhost:3000    # ava@acme-demo.com / password
 ```
 
@@ -63,6 +85,9 @@ services/gateway         edge: JWT check, routing, rate limit, BFF, blocks /inte
 services/policy          deterministic rule engine: (action, context) -> ALLOW | REQUIRE_APPROVAL(role) | DENY; versions, simulator, audit
 services/communication   SMTP out via Mailpit, inbound polling, threading by Message-ID / invoice number, Jinja templates, PDF text
 services/tool-gateway    the only path to side effects: typed manifest, policy + approval gate, idempotency, redaction, audit
+services/orchestrator    Temporal CaseWorkflow + worker, LangGraph tool-loop agents (supervisor, triage, investigator), prompts, model routing
+services/realtime        Kafka -> WebSocket fan-out for the live console
+libs/recoup-llm          provider-agnostic LLM client (LangChain init_chat_model), tiers, pricing, heuristic stand-in
 frontend                 React console: work queue, case workspace, approval inbox
 infra/                   postgres init, OTel collector, Tempo, Grafana provisioning
 scripts/seed.py          one-shot demo seed
@@ -82,6 +107,21 @@ agent ──POST /tools/create_credit_memo/invoke──> Tool Gateway
 ```
 
 Nothing the model says can skip this path: the LLM never talks to the ERP or SMTP directly.
+
+## How a case gets worked (phase 3)
+
+```
+case.created (Kafka) ──> orchestrator starts CaseWorkflow(case-<id>) on Temporal
+  loop:  Supervisor (LLM, structured decision) ──> Triage | Investigator | ESCALATED | RESOLVED
+         specialist = LangGraph tool loop: model ⇄ Tool Gateway until it calls submit_<agent>
+         every step: agent_steps row, agent.step.* event, case timeline entry, tokens + cost
+  signals: customer_replied / action_decided / human_takeover / human_release (from Kafka)
+  waits:   WAIT_FOR_CUSTOMER (timer) · AWAIT_APPROVAL · HUMAN_CONTROL (paused)
+  end:     escalation brief via escalate_case tool, or RESOLVED transition
+```
+
+The console's **Agents** page shows every run's trace (steps, tool calls, tokens, models,
+prompt versions), lets managers edit and version prompts, and set per-tenant models.
 
 ## Development
 

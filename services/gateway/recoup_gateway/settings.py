@@ -11,6 +11,7 @@ class Settings(BaseServiceSettings):
     policy_url: str = "http://localhost:8004"
     comm_url: str = "http://localhost:8005"
     tool_gateway_url: str = "http://localhost:8006"
+    orchestrator_url: str = "http://localhost:8007"
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
     rate_limit_per_minute: int = 600
     upstream_timeout_seconds: float = 30.0

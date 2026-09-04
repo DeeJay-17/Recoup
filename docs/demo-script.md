@@ -1,4 +1,4 @@
-# Demo script (phases 1–2)
+# Demo script (phases 1–3)
 
 1. `make up && make seed` — ~400 invoices; ~45% are overdue with a scripted root cause.
 2. Open http://localhost:3000, sign in as `ava@acme-demo.com / password`.
@@ -43,3 +43,18 @@
     reply to the case; it appears under **Email** on the case page and in the timeline.
 13. Case page → **Tool calls** shows every invocation with args, result, policy decision and
     latency; the same rows are on Kafka as `tool.invoked` / `tool.blocked`.
+
+## Phase 3: agents
+
+14. Set `LLM_PROVIDER=google_genai` and `LLM_API_KEY` in `.env` (or keep `heuristic`), then
+    `make up && make seed`. Every ingested case starts a `CaseWorkflow`; watch them in Temporal
+    UI (:8233) and on the **Agents** page.
+15. Open a case: the **Agents** card shows the live run (supervisor → triage → investigator →
+    escalation), and the timeline fills in as steps complete over the WebSocket.
+16. **Agents → Runs**: click a run for the full trace: each step's structured output, tool
+    calls with args, provider/model, tokens and cost. Prompts and model versions are recorded
+    per run.
+17. **Agents → Prompts**: edit the triage prompt, save as v2; the next run records v2 in its
+    bundle. **Agents → Models**: switch the strong tier to another provider/model per tenant.
+18. Take over a case from its page: the run shows `WAITING / HUMAN_CONTROL`; return it and the
+    supervisor resumes.
