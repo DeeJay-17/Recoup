@@ -184,6 +184,7 @@ class CaseWorkflow:
                     timedelta(days=params.approval_wait_days),
                     on_timeout={"type": "approval_timeout"},
                 )
+                replied = any(s.get("type") == "customer_reply" for s in signals)
                 state = await workflow.execute_activity(
                     _ACTIVITY["merge_signals"],
                     MergeArgs(state=state, signals=signals),
