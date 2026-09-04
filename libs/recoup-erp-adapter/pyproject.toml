@@ -1,0 +1,13 @@
+[project]
+name = "recoup-erp-adapter"
+version = "0.1.0"
+description = "ERP adapter interface + Mock ERP implementation for Recoup"
+requires-python = ">=3.12"
+dependencies = ["pydantic>=2.7", "httpx>=0.27"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["recoup_erp"]

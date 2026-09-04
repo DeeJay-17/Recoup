@@ -1,0 +1,182 @@
+name: recoup
+
+x-service-env: &service-env
+  DATABASE_URL: postgresql+asyncpg://recoup:recoup@postgres:5432/recoup
+  KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+  REDIS_URL: redis://redis:6379/0
+  JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  LOG_JSON: "true"
+  ENVIRONMENT: dev
+  IAM_URL: http://iam:8000
+  MOCK_ERP_URL: http://mock-erp:8000
+  CASE_URL: http://case:8000
+
+services:
+  # ---------------- infrastructure ----------------
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: recoup
+      POSTGRES_PASSWORD: recoup
+      POSTGRES_DB: recoup
+    ports: ["5433:5432"]  # 5433 on the host to avoid clashing with a local Postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recoup -d recoup"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    command:
+      - redpanda start --smp 1 --memory 512M --overprovisioned --node-id 0
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr redpanda:33145 --advertise-rpc-addr redpanda:33145
+    ports: ["19092:19092", "18081:18081", "18082:18082"]
+    volumes: ["redpanda:/var/lib/redpanda/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  redpanda-console:
+    image: redpandadata/console:v2.7.2
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+    ports: ["8090:8080"]
+    depends_on: { redpanda: { condition: service_healthy } }
+
+  temporal:
+    image: temporalio/auto-setup:1.25.2
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_USER: recoup
+      POSTGRES_PWD: recoup
+      POSTGRES_SEEDS: postgres
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
+    ports: ["7233:7233"]
+    depends_on: { postgres: { condition: service_healthy } }
+
+  temporal-ui:
+    image: temporalio/ui:2.31.2
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:3000
+    ports: ["8233:8080"]
+    depends_on: [temporal]
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  minio:
+    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: recoup
+      MINIO_ROOT_PASSWORD: recoup-secret
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["minio:/data"]
+
+  mailpit:
+    image: axllent/mailpit:v1.20
+    ports: ["8025:8025", "1025:1025"]
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes: ["./infra/otel/collector.yaml:/etc/otel/config.yaml:ro"]
+    ports: ["4317:4317", "4318:4318"]
+    depends_on: [tempo]
+
+  tempo:
+    image: grafana/tempo:2.6.0
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes: ["./infra/otel/tempo.yaml:/etc/tempo.yaml:ro", "tempo:/var/tempo"]
+    ports: ["3200:3200"]
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes: ["./infra/grafana/provisioning:/etc/grafana/provisioning:ro"]
+    ports: ["3001:3000"]
+    depends_on: [tempo]
+
+  # ---------------- application services ----------------
+  iam:
+    build: { context: ., dockerfile: services/iam/Dockerfile }
+    environment: *service-env
+    ports: ["8001:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redpanda: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/healthz')\""]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  mock-erp:
+    build: { context: ., dockerfile: services/mock-erp/Dockerfile }
+    environment:
+      <<: *service-env
+      SEED: ${ERP_SEED:-42}
+      SEED_CUSTOMERS: ${ERP_CUSTOMERS:-60}
+      SEED_INVOICES: ${ERP_INVOICES:-400}
+    ports: ["8002:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/healthz')\""]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  case:
+    build: { context: ., dockerfile: services/case/Dockerfile }
+    environment:
+      <<: *service-env
+      INGEST_INTERVAL_SECONDS: ${INGEST_INTERVAL_SECONDS:-60}
+      INGEST_OVERDUE_DAYS: ${INGEST_OVERDUE_DAYS:-7}
+      DEFAULT_TENANT_SLUG: ${DEFAULT_TENANT_SLUG:-acme}
+    ports: ["8003:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redpanda: { condition: service_healthy }
+      iam: { condition: service_healthy }
+      mock-erp: { condition: service_healthy }
+
+  gateway:
+    build: { context: ., dockerfile: services/gateway/Dockerfile }
+    environment:
+      <<: *service-env
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+    ports: ["8000:8000"]
+    depends_on: [iam, case, mock-erp]
+
+  frontend:
+    build: { context: ./frontend }
+    ports: ["3000:80"]
+    depends_on: [gateway]
+
+volumes:
+  pgdata:
+  redpanda:
+  minio:
+  tempo:
