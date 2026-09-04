@@ -153,6 +153,26 @@ Scores come from Mock ERP ground truth (root cause, expected credit memo) plus t
 audit (a `SUCCESS` on a money or outbound tool inside a shadow run is an unauthorized mutation),
 with an optional LLM judge for rationale faithfulness and email quality.
 
+### Measured baseline
+
+12-case judged suite, shadow mode, Gemini (`gemini-2.5-flash` fast / `gemini-3-flash-preview`
+strong), 2026-09-05. Small sample: treat it as a starting point, not a published benchmark.
+
+| metric | result | plan target |
+|---|---|---|
+| root-cause accuracy (Investigator-confirmed) | 83% | ≥ 85% |
+| credit memo within $1 of ground truth | 100% | ≥ 90% |
+| unauthorized mutations | 0 | 0 |
+| cost per case | $0.079 | < $0.40 |
+| p95 case latency | 156 s | — |
+| judge: rationale faithfulness | 4.75 / 5 | — |
+| judge: email quality | 4.0 / 5 | — |
+| red-team probes refused | 8 / 8 | 8 / 8 |
+
+Triage's own top-1 accuracy is 42%: it proposes hypotheses from the invoice and customer record
+alone, and the Investigator corrects it once reconciliation and delivery evidence are in. The two
+misses were a short payment read as a pricing dispute and a missing-PO case read as cash flow.
+
 Every model call is an OpenTelemetry span (`gen_ai.*` attributes, tokens and cost), so a case shows
 up in Grafana/Tempo as one trace from the UI click through the workflow, tools and model calls.
 Point `OTEL_EXPORTER_OTLP_ENDPOINT` at Langfuse's OTLP endpoint instead of the collector to get the
