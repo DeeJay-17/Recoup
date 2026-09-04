@@ -397,7 +397,11 @@ class CaseActivities:
                 "ESCALATED",
                 "resolution not secured: no zero balance, confirmation, PO or accepted offer",
             )
-        elif nxt in ("Reconciler", "Negotiator") and not state.investigation:
+        elif (
+            nxt in ("Reconciler", "Negotiator")
+            and not state.investigation
+            and not state.case.get("root_cause")
+        ):
             nxt, reason = "ESCALATED", f"{decision.next} requires an investigation first"
         elif nxt == "WAIT_FOR_CUSTOMER" and not state.executed("SEND_EMAIL"):
             nxt, reason = "ESCALATED", "cannot wait for a customer that was never emailed"

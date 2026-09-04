@@ -75,7 +75,7 @@ def main() -> int:
                         inv = c.get(f"{ERP}/invoices/{refs[0]}").json()
                         po = inv.get("po_number")
                         if scenario == "MISSING_PO":
-                            po = f"PO-{50000 + int(refs[0].split('-')[1]) % 4000}"
+                            po = f"PO-{inv.get('customer_ref', 'CUST').split('-')[-1]}{refs[0].split('-')[1][-4:]}"
                 to_addr = m["To"][0]["Address"]
                 date = time.strftime("%Y-%m-%d", time.localtime(time.time() + 7 * 86400))
                 if args.persona == "evasive":
